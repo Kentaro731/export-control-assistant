@@ -1,0 +1,15 @@
+# 実行時データ
+judgment_history.json
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 秘密情報（万一の混入防止）
+.env
+.env.*
+*.key
+*Key*.txt

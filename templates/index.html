@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>輸出貨物 該非判定ツール</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <span class="header-logo">輸出判定</span>
+      <span class="header-title">輸出貨物 該非判定ツール</span>
+      <span class="header-badge">安全保障輸出管理</span>
+    </div>
+  </header>
+
+  <main class="main">
+    <!-- 左：入力フォーム -->
+    <section class="form-panel">
+      <h2 class="panel-title">貨物情報を入力</h2>
+
+      <div class="form-group">
+        <label>顧客名</label>
+        <input type="text" id="customer" placeholder="例：株式会社〇〇製作所">
+      </div>
+
+      <div class="form-group">
+        <label>材質</label>
+        <div class="input-with-preset">
+          <input type="text" id="material" placeholder="例：アルミ A6061、銅板 C1100">
+          <select id="material-preset" onchange="applyMaterialPreset()">
+            <option value="">▼ よく使う材質</option>
+            <option value="アルミ A6061">アルミ A6061</option>
+            <option value="アルミ A5052">アルミ A5052</option>
+            <option value="アルミ A2017">アルミ A2017</option>
+            <option value="銅板 C1100">銅板 C1100</option>
+            <option value="銅合金棒 C3604">銅合金棒 C3604</option>
+            <option value="真鍮板 C2801">真鍮板 C2801</option>
+            <option value="チタン Ti-6Al-4V">チタン Ti-6Al-4V</option>
+            <option value="ステンレス SUS304">ステンレス SUS304</option>
+            <option value="ステンレス SUS316">ステンレス SUS316</option>
+            <option value="ニッケル合金">ニッケル合金</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>寸法 <span class="label-hint">（2寸法 または 3寸法、mm単位）</span></label>
+        <input type="text" id="dimensions" placeholder="例：200×300×10mm、φ50×100mm">
+      </div>
+
+      <div class="form-group">
+        <label>用途（最終用途）</label>
+        <textarea id="purpose" rows="3" placeholder="例：自動車部品の金型材料として使用。切削加工後に組み付け。"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>商流 <span class="label-hint">（複数の場合はすべて記入）</span></label>
+        <input type="text" id="trade_flow" placeholder="例：当社 → 商社A → 現地メーカーB">
+      </div>
+
+      <div class="form-group">
+        <label>仕向け国</label>
+        <div class="input-with-badge">
+          <input type="text" id="destination" placeholder="例：アメリカ、中国、ドイツ" oninput="checkWhiteCountry()">
+          <span id="country-badge" class="country-badge hidden"></span>
+        </div>
+      </div>
+
+      <button class="btn-judge" id="judge-btn" onclick="submitJudgment()">
+        <span id="btn-text">AI 該非判定を実行</span>
+        <span id="btn-loading" class="hidden">判定中...</span>
+      </button>
+
+      <p class="disclaimer">
+        ※本ツールはAIによる補助判定です。最終判断は輸出管理担当者が行ってください。<br>
+        経産省ガイドライン更新時は、管理者にご連絡ください。
+      </p>
+    </section>
+
+    <!-- 右：判定結果 -->
+    <section class="result-panel">
+      <div id="result-placeholder" class="result-placeholder">
+        <div class="placeholder-icon">⚖️</div>
+        <p>左側のフォームに入力して<br>「AI 該非判定を実行」を押してください</p>
+      </div>
+
+      <div id="result-content" class="hidden">
+        <div class="result-header">
+          <div id="overall-badge" class="overall-badge"></div>
+          <button class="btn-copy" onclick="copyResult()">📋 結果をコピー</button>
+        </div>
+
+        <div id="steps-list" class="steps-list"></div>
+
+        <div class="result-section">
+          <h3>推奨アクション</h3>
+          <p id="recommendation" class="recommendation-text"></p>
+        </div>
+
+        <div class="result-section hs-section">
+          <h3>参考 HSコード</h3>
+          <p id="hs-hint" class="hs-text"></p>
+        </div>
+
+        <div class="result-section caution-section">
+          <p id="caution-text"></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 判定履歴 -->
+  <section class="history-section">
+    <div class="history-header">
+      <h2>判定履歴</h2>
+      <button class="btn-refresh" onclick="loadHistory()">更新</button>
+    </div>
+    <div class="table-wrapper">
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>日時</th>
+            <th>顧客名</th>
+            <th>材質</th>
+            <th>仕向け国</th>
+            <th>用途（概要）</th>
+            <th>判定結果</th>
+            <th>推奨アクション</th>
+          </tr>
+        </thead>
+        <tbody id="history-body">
+          <tr><td colspan="7" class="empty-row">履歴を読み込み中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <script>
+    // ホワイト国リスト（フロント側でリアルタイム表示）
+    const WHITE_COUNTRIES = [
+      "アメリカ","米国","USA","アメリカ合衆国","イギリス","英国","UK",
+      "ドイツ","フランス","イタリア","スペイン","オランダ","ベルギー",
+      "ルクセンブルク","デンマーク","スウェーデン","フィンランド","ノルウェー",
+      "アイスランド","ポルトガル","オーストリア","スイス","アイルランド","ギリシャ",
+      "チェコ","ハンガリー","ポーランド","スロバキア","スロベニア","エストニア",
+      "ラトビア","リトアニア","マルタ","キプロス","ブルガリア","ルーマニア","クロアチア",
+      "オーストラリア","豪州","ニュージーランド","カナダ","韓国","大韓民国","アルゼンチン",
+      "United States","USA","UK","United Kingdom","Germany","France","Italy","Spain",
+      "Netherlands","Belgium","Denmark","Sweden","Finland","Norway","Australia","Canada",
+      "South Korea"
+    ];
+    const DESIGNATED_COUNTRIES = [
+      "北朝鮮","朝鮮民主主義人民共和国","イラン","イラク","リビア",
+      "コンゴ民主共和国","ソマリア","スーダン","南スーダン","中央アフリカ共和国",
+      "ベラルーシ","ミャンマー","ハイチ","マリ"
+    ];
+
+    let lastResult = null;
+
+    function checkWhiteCountry() {
+      const dest = document.getElementById("destination").value.trim();
+      const badge = document.getElementById("country-badge");
+      if (!dest) { badge.classList.add("hidden"); return; }
+      if (WHITE_COUNTRIES.includes(dest)) {
+        badge.textContent = "✅ ホワイト国";
+        badge.className = "country-badge badge-ok";
+      } else if (DESIGNATED_COUNTRIES.includes(dest)) {
+        badge.textContent = "⚠️ 指定国";
+        badge.className = "country-badge badge-ng";
+      } else {
+        badge.textContent = "🟡 非ホワイト国";
+        badge.className = "country-badge badge-warn";
+      }
+      badge.classList.remove("hidden");
+    }
+
+    function applyMaterialPreset() {
+      const preset = document.getElementById("material-preset").value;
+      if (preset) document.getElementById("material").value = preset;
+    }
+
+    async function submitJudgment() {
+      const payload = {
+        customer:    document.getElementById("customer").value,
+        material:    document.getElementById("material").value,
+        dimensions:  document.getElementById("dimensions").value,
+        purpose:     document.getElementById("purpose").value,
+        trade_flow:  document.getElementById("trade_flow").value,
+        destination: document.getElementById("destination").value,
+      };
+      if (!payload.material || !payload.destination) {
+        alert("「材質」と「仕向け国」は必須です。");
+        return;
+      }
+
+      document.getElementById("btn-text").classList.add("hidden");
+      document.getElementById("btn-loading").classList.remove("hidden");
+      document.getElementById("judge-btn").disabled = true;
+      document.getElementById("result-placeholder").classList.add("hidden");
+      document.getElementById("result-content").classList.add("hidden");
+
+      try {
+        const res = await fetch("/api/judge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (data.status === "ok") {
+          renderResult(data.result);
+          loadHistory();
+        } else {
+          alert("エラーが発生しました: " + (data.message || "不明なエラー"));
+        }
+      } catch (e) {
+        alert("通信エラー: " + e.message);
+      } finally {
+        document.getElementById("btn-text").classList.remove("hidden");
+        document.getElementById("btn-loading").classList.add("hidden");
+        document.getElementById("judge-btn").disabled = false;
+      }
+    }
+
+    function renderResult(result) {
+      lastResult = result;
+      const overall = result.overall || "要確認";
+      const badge = document.getElementById("overall-badge");
+      if (overall === "OK") {
+        badge.textContent = "🟢 輸出OK（許可不要）";
+        badge.className = "overall-badge badge-ok";
+      } else if (overall === "要確認") {
+        badge.textContent = "🟡 要確認";
+        badge.className = "overall-badge badge-warn";
+      } else {
+        badge.textContent = "🔴 要許可 / 輸出不可";
+        badge.className = "overall-badge badge-ng";
+      }
+
+      const stepsList = document.getElementById("steps-list");
+      stepsList.innerHTML = "";
+      (result.steps || []).forEach(s => {
+        const cls = s.result === "非該当" || s.result === "ホワイト国" || s.result === "問題なし" || s.result === "スキップ"
+          ? "step-ok"
+          : s.result === "該当" || s.result === "輸出不可"
+          ? "step-ng"
+          : "step-warn";
+        stepsList.innerHTML += `
+          <details class="step-item ${cls}">
+            <summary><span class="step-num">STEP ${s.step}</span> ${s.title} — <b>${s.result}</b></summary>
+            <p class="step-reason">${s.reason || ""}</p>
+          </details>`;
+      });
+
+      document.getElementById("recommendation").textContent = result.recommendation || "";
+      document.getElementById("hs-hint").textContent = result.hs_hint || "";
+      document.getElementById("caution-text").textContent = result.caution || "※本ツールはAI補助判定です。最終判断は輸出管理担当者が行ってください。";
+
+      document.getElementById("result-content").classList.remove("hidden");
+    }
+
+    function copyResult() {
+      if (!lastResult) return;
+      const lines = [
+        `【輸出該非判定結果】${new Date().toLocaleString("ja-JP")}`,
+        `総合判定: ${lastResult.overall}`,
+        "",
+        ...( lastResult.steps || []).map(s => `STEP${s.step} ${s.title}: ${s.result}\n  ${s.reason}`),
+        "",
+        `【推奨アクション】\n${lastResult.recommendation}`,
+        `【参考HSコード】${lastResult.hs_hint}`,
+      ];
+      navigator.clipboard.writeText(lines.join("\n")).then(() => {
+        alert("クリップボードにコピーしました。");
+      });
+    }
+
+    async function loadHistory() {
+      const res = await fetch("/api/history");
+      const history = await res.json();
+      const tbody = document.getElementById("history-body");
+      if (!history.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-row">判定履歴がありません</td></tr>';
+        return;
+      }
+      tbody.innerHTML = history.map(h => {
+        const badge = h.overall === "OK"
+          ? '<span class="hist-badge badge-ok">OK</span>'
+          : h.overall === "要確認"
+          ? '<span class="hist-badge badge-warn">要確認</span>'
+          : '<span class="hist-badge badge-ng">要許可</span>';
+        const purpose = (h.purpose || "").length > 30
+          ? h.purpose.slice(0, 30) + "…"
+          : (h.purpose || "—");
+        const rec = (h.recommendation || "").length > 50
+          ? h.recommendation.slice(0, 50) + "…"
+          : (h.recommendation || "—");
+        return `<tr>
+          <td>${h.timestamp || ""}</td>
+          <td>${h.customer || "—"}</td>
+          <td>${h.material || "—"}</td>
+          <td>${h.destination || "—"}</td>
+          <td>${purpose}</td>
+          <td>${badge}</td>
+          <td class="rec-cell">${rec}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    loadHistory();
+  </script>
+</body>
+</html>
