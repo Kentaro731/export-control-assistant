@@ -2,8 +2,7 @@ import os
 import json
 from datetime import datetime
 from flask import (
-    Flask, render_template, jsonify, request,
-    session, redirect, url_for,
+    Flask, render_template, jsonify, request, Response,
 )
 import anthropic
 from export_law_data import (
@@ -15,68 +14,37 @@ from export_law_data import (
 app = Flask(__name__)
 client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
-# === 簡易パスワード認証（社内共有用）===
-# 環境変数 APP_PASSWORD が設定されている場合のみ認証を有効化する。
-# （ローカル開発で未設定なら従来どおりパスワードなしで動作）
-app.secret_key = os.environ.get("APP_SECRET_KEY") or os.urandom(24).hex()
-APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
-
-LOGIN_PAGE = """<!doctype html>
-<html lang="ja"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>輸出判定ツール ログイン</title>
-<style>
-  body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
-       background:#0f1419;color:#e6e6e6;font-family:"Yu Gothic",sans-serif;}
-  .box{background:#1a2230;padding:40px 36px;border-radius:14px;width:320px;
-       box-shadow:0 8px 30px rgba(0,0,0,.4);}
-  h1{font-size:18px;margin:0 0 4px;}
-  p.sub{font-size:12px;color:#8b9bb4;margin:0 0 24px;}
-  input{width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:1px solid #34425a;
-        background:#0f1419;color:#fff;font-size:15px;margin-bottom:14px;}
-  button{width:100%;padding:12px;border:0;border-radius:8px;background:#2f6df6;color:#fff;
-         font-size:15px;font-weight:bold;cursor:pointer;}
-  .err{color:#ff6b6b;font-size:13px;margin-bottom:12px;}
-  .note{font-size:11px;color:#6b7a93;margin-top:18px;line-height:1.6;}
-</style></head>
-<body><form class="box" method="post">
-  <h1>輸出判定ツール</h1>
-  <p class="sub">社内利用者専用</p>
-  {ERR}
-  <input type="password" name="password" placeholder="合言葉（パスワード）" autofocus>
-  <button type="submit">ログイン</button>
-  <p class="note">本ツールはAIによる一次確認の補助です。最終的な該非判断は輸出管理担当者が行ってください。</p>
-</form></body></html>"""
+# === Basic認証（社内ポータルと共通の資格情報で統一）===
+# 資格情報は環境変数 BASIC_AUTH_USER / BASIC_AUTH_PASS で設定する。
+# ※本リポジトリは公開のため、パスワードはコードに書かず Render の環境変数にのみ置く。
+#   社内ポータル（shinx-internal-apps）と同じ値を設定すれば、社員は1組の資格情報で両方を利用できる。
+BASIC_AUTH_USER = os.environ.get("BASIC_AUTH_USER", "shinx")
+BASIC_AUTH_PASS = os.environ.get("BASIC_AUTH_PASS", "")  # 秘密はコードに残さない
 
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if not APP_PASSWORD:
-        return redirect(url_for("index"))
-    if request.method == "POST":
-        if request.form.get("password") == APP_PASSWORD:
-            session["authed"] = True
-            return redirect(url_for("index"))
-        return LOGIN_PAGE.replace("{ERR}", '<p class="err">パスワードが違います。</p>')
-    return LOGIN_PAGE.replace("{ERR}", "")
-
-
-@app.route("/logout")
-def logout():
-    session.pop("authed", None)
-    return redirect(url_for("login"))
+def _request_auth():
+    """401を返してブラウザに認証ダイアログを表示させる"""
+    return Response(
+        "認証が必要です。正しいユーザー名とパスワードを入力してください。",
+        status=401,
+        headers={"WWW-Authenticate": 'Basic realm="Shinx Internal Apps"'},
+    )
 
 
 @app.before_request
-def require_login():
-    # パスワード未設定時は認証なし（ローカル開発用）
-    if not APP_PASSWORD:
+def enforce_basic_auth():
+    # ヘルスチェックは認証不要
+    if request.path == "/healthz":
         return None
-    # ログイン画面と静的ファイルは認証不要
-    if request.endpoint in ("login", "static"):
-        return None
-    if not session.get("authed"):
-        return redirect(url_for("login"))
+    # パスワード未設定なら安全側に全拒否（誤って開放しないため）
+    if not BASIC_AUTH_PASS:
+        return Response(
+            "サーバー設定エラー：BASIC_AUTH_PASS が未設定です。管理者に連絡してください。",
+            status=503,
+        )
+    auth = request.authorization
+    if not auth or auth.username != BASIC_AUTH_USER or auth.password != BASIC_AUTH_PASS:
+        return _request_auth()
     return None
 
 
@@ -160,6 +128,12 @@ def save_history(entry):
     history = history[:100]  # 最新100件のみ保持
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
+
+
+@app.route("/healthz")
+def healthz():
+    """Renderヘルスチェック用（認証不要）"""
+    return {"status": "ok"}, 200
 
 
 @app.route("/")

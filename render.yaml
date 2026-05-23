@@ -10,9 +10,10 @@ services:
       # Render ダッシュボードの Environment で値を設定すること（ここには値を書かない）
       - key: ANTHROPIC_API_KEY
         sync: false
-      - key: APP_PASSWORD
+      # 社内ポータルと同じ資格情報を設定（shinx / Shinx2026Plate!）
+      - key: BASIC_AUTH_USER
         sync: false
-      - key: APP_SECRET_KEY
-        generateValue: true
+      - key: BASIC_AUTH_PASS
+        sync: false
       - key: PYTHON_VERSION
         value: "3.12.4"
