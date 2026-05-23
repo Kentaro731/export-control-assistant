@@ -336,6 +336,83 @@ select option { background: var(--surface2); }
   vertical-align: top;
 }
 .history-table tr:last-child td { border-bottom: none; }
+
+/* === 安全策UI === */
+.screening-banner {
+  background: var(--warn-bg);
+  border: 1px solid var(--warn);
+  color: #f0d99a;
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  margin-bottom: 14px;
+}
+.taikohyo-banner {
+  background: var(--ng-bg);
+  border: 1px solid var(--ng);
+  color: #f7b3af;
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  margin-bottom: 14px;
+}
+.conf-badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  margin-left: 6px;
+  border: 1px solid var(--border);
+}
+.conf-high { background: var(--ok-bg); color: var(--ok); border-color: var(--ok); }
+.conf-mid  { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
+.conf-low  { background: var(--ng-bg); color: var(--ng); border-color: var(--ng); }
+
+.unverifiable-section {
+  border: 1px solid var(--warn);
+  background: var(--warn-bg);
+}
+.unverifiable-section h3 { color: var(--warn); }
+.unverifiable-section ul { margin: 8px 0 0 20px; }
+.unverifiable-section li { font-size: 13px; margin-bottom: 4px; }
+
+.approval-section {
+  border: 1px solid var(--accent);
+  background: rgba(88,166,255,0.06);
+}
+.approval-status {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+.status-pending { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn); }
+.status-approved { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok); }
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin: 8px 0 14px;
+  cursor: pointer;
+}
+.checkbox-label input { width: 16px; height: 16px; }
+.btn-approve {
+  width: 100%;
+  padding: 11px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #06223f;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-approve:hover { filter: brightness(1.08); }
+.hist-final { font-size: 11px; color: var(--text-muted); }
 .history-table tr:hover td { background: var(--surface2); }
 
 .hist-badge {

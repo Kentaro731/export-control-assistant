@@ -69,12 +69,13 @@
       </div>
 
       <button class="btn-judge" id="judge-btn" onclick="submitJudgment()">
-        <span id="btn-text">AI 該非判定を実行</span>
+        <span id="btn-text">AI 暫定スクリーニングを実行</span>
         <span id="btn-loading" class="hidden">判定中...</span>
       </button>
 
       <p class="disclaimer">
-        ※本ツールはAIによる補助判定です。最終判断は輸出管理担当者が行ってください。<br>
+        ※本ツールはAIによる<b>暫定スクリーニング（一次確認の補助）</b>です。出力は最終判定ではありません。<br>
+        最終的な該非判定は、輸出管理担当者が公式の<b>項目別対比表</b>で確定してください。<br>
         経産省ガイドライン更新時は、管理者にご連絡ください。
       </p>
     </section>
@@ -87,12 +88,29 @@
       </div>
 
       <div id="result-content" class="hidden">
+        <!-- 常時表示の免責バナー（断定させない） -->
+        <div class="screening-banner">
+          ⚠️ これはAIによる<b>暫定スクリーニング（一次確認の補助）</b>です。<br>
+          最終的な該非判定は、輸出管理担当者が公式の<b>項目別対比表</b>で確定してください。
+        </div>
+
         <div class="result-header">
           <div id="overall-badge" class="overall-badge"></div>
           <button class="btn-copy" onclick="copyResult()">📋 結果をコピー</button>
         </div>
 
+        <!-- リスト規制（別表第1）要突合バナー -->
+        <div id="taikohyo-banner" class="taikohyo-banner hidden">
+          📋 リスト規制（輸出令別表第1）の該当可能性があります。<b>公式の項目別対比表で製品仕様を突合</b>し、担当者が該非を確定してください。
+        </div>
+
         <div id="steps-list" class="steps-list"></div>
+
+        <!-- AIが確認できなかった事項 -->
+        <div id="unverifiable-section" class="result-section unverifiable-section hidden">
+          <h3>⚠️ 担当者が必ず確認すべき事項（AIでは確認不可）</h3>
+          <ul id="unverifiable-list"></ul>
+        </div>
 
         <div class="result-section">
           <h3>推奨アクション</h3>
@@ -106,6 +124,32 @@
 
         <div class="result-section caution-section">
           <p id="caution-text"></p>
+        </div>
+
+        <!-- 人間の承認ワークフロー -->
+        <div class="result-section approval-section">
+          <h3>担当者による最終判断の記録</h3>
+          <div id="approval-status" class="approval-status status-pending">状態：未確定（担当者の確認待ち）</div>
+          <div id="approval-form">
+            <div class="form-group">
+              <label>確認者名</label>
+              <input type="text" id="approver" placeholder="例：山田太郎">
+            </div>
+            <div class="form-group">
+              <label>最終判断（担当者）</label>
+              <select id="final-decision">
+                <option value="">▼ 選択してください</option>
+                <option value="非該当（許可不要）">非該当（許可不要）</option>
+                <option value="該当・要許可申請">該当・要許可申請</option>
+                <option value="保留・上長/専門家へ相談">保留・上長/専門家へ相談</option>
+              </select>
+            </div>
+            <label class="checkbox-label">
+              <input type="checkbox" id="taikohyo-checked">
+              公式の項目別対比表で突合・確認した
+            </label>
+            <button class="btn-approve" onclick="submitApproval()">この内容で確定・記録する</button>
+          </div>
         </div>
       </div>
     </section>
@@ -126,12 +170,13 @@
             <th>材質</th>
             <th>仕向け国</th>
             <th>用途（概要）</th>
-            <th>判定結果</th>
+            <th>AI目安</th>
+            <th>状態 / 最終判断</th>
             <th>推奨アクション</th>
           </tr>
         </thead>
         <tbody id="history-body">
-          <tr><td colspan="7" class="empty-row">履歴を読み込み中...</td></tr>
+          <tr><td colspan="8" class="empty-row">履歴を読み込み中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -158,6 +203,7 @@
     ];
 
     let lastResult = null;
+    let lastEntryId = null;
 
     function checkWhiteCountry() {
       const dest = document.getElementById("destination").value.trim();
@@ -209,6 +255,7 @@
         });
         const data = await res.json();
         if (data.status === "ok") {
+          lastEntryId = data.entry_id || null;
           renderResult(data.result);
           loadHistory();
         } else {
@@ -223,24 +270,37 @@
       }
     }
 
+    function escapeHtml(str) {
+      return (str || "").replace(/[&<>"']/g, c => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    }
+
+    function confidenceBadge(conf) {
+      if (!conf) return "";
+      const cls = conf === "高" ? "conf-high" : conf === "低" ? "conf-low" : "conf-mid";
+      return `<span class="conf-badge ${cls}">確信度: ${escapeHtml(conf)}</span>`;
+    }
+
     function renderResult(result) {
       lastResult = result;
+      // overallは「最終判定」ではなく暫定の目安として表示（断定しない）
       const overall = result.overall || "要確認";
       const badge = document.getElementById("overall-badge");
       if (overall === "OK") {
-        badge.textContent = "🟢 輸出OK（許可不要）";
+        badge.textContent = "🟢 リスク低（目安）— 要担当者確認";
         badge.className = "overall-badge badge-ok";
       } else if (overall === "要確認") {
-        badge.textContent = "🟡 要確認";
+        badge.textContent = "🟡 要確認（目安）— 担当者判断";
         badge.className = "overall-badge badge-warn";
       } else {
-        badge.textContent = "🔴 要許可 / 輸出不可";
+        badge.textContent = "🔴 要許可の可能性（目安）— 担当者確認必須";
         badge.className = "overall-badge badge-ng";
       }
 
+      const steps = result.steps || [];
       const stepsList = document.getElementById("steps-list");
       stepsList.innerHTML = "";
-      (result.steps || []).forEach(s => {
+      steps.forEach(s => {
         const cls = s.result === "非該当" || s.result === "ホワイト国" || s.result === "問題なし" || s.result === "スキップ"
           ? "step-ok"
           : s.result === "該当" || s.result === "輸出不可"
@@ -248,26 +308,93 @@
           : "step-warn";
         stepsList.innerHTML += `
           <details class="step-item ${cls}">
-            <summary><span class="step-num">STEP ${s.step}</span> ${s.title} — <b>${s.result}</b></summary>
-            <p class="step-reason">${s.reason || ""}</p>
+            <summary><span class="step-num">STEP ${s.step}</span> ${escapeHtml(s.title)} — <b>${escapeHtml(s.result)}</b> ${confidenceBadge(s.confidence)}</summary>
+            <p class="step-reason">${escapeHtml(s.reason || "")}</p>
           </details>`;
       });
 
+      // リスト規制（STEP1）が非該当でない場合は対比表突合バナーを表示
+      const step1 = steps.find(s => s.step === 1);
+      const banner = document.getElementById("taikohyo-banner");
+      if (step1 && step1.result !== "非該当") {
+        banner.classList.remove("hidden");
+      } else {
+        banner.classList.add("hidden");
+      }
+
+      // AIが確認できなかった事項
+      const uvSection = document.getElementById("unverifiable-section");
+      const uvList = document.getElementById("unverifiable-list");
+      const uv = result.unverifiable || [];
+      if (uv.length) {
+        uvList.innerHTML = uv.map(x => `<li>${escapeHtml(x)}</li>`).join("");
+        uvSection.classList.remove("hidden");
+      } else {
+        uvSection.classList.add("hidden");
+      }
+
       document.getElementById("recommendation").textContent = result.recommendation || "";
       document.getElementById("hs-hint").textContent = result.hs_hint || "";
-      document.getElementById("caution-text").textContent = result.caution || "※本ツールはAI補助判定です。最終判断は輸出管理担当者が行ってください。";
+      document.getElementById("caution-text").textContent = result.caution || "※本ツールはAIによる暫定スクリーニングです。最終判断は輸出管理担当者が行ってください。";
+
+      // 承認フォームを初期化（未確定状態に戻す）
+      const statusEl = document.getElementById("approval-status");
+      statusEl.textContent = "状態：未確定（担当者の確認待ち）";
+      statusEl.className = "approval-status status-pending";
+      document.getElementById("approval-form").classList.remove("hidden");
+      document.getElementById("approver").value = "";
+      document.getElementById("final-decision").value = "";
+      document.getElementById("taikohyo-checked").checked = false;
 
       document.getElementById("result-content").classList.remove("hidden");
+    }
+
+    async function submitApproval() {
+      if (!lastEntryId) { alert("先に判定を実行してください。"); return; }
+      const approver = document.getElementById("approver").value.trim();
+      const finalDecision = document.getElementById("final-decision").value;
+      const taikohyoChecked = document.getElementById("taikohyo-checked").checked;
+      if (!approver || !finalDecision) {
+        alert("「確認者名」と「最終判断」は必須です。");
+        return;
+      }
+      try {
+        const res = await fetch(`/api/history/${lastEntryId}/approve`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            approver: approver,
+            final_decision: finalDecision,
+            taikohyo_checked: taikohyoChecked,
+          }),
+        });
+        const data = await res.json();
+        if (data.status === "ok") {
+          const statusEl = document.getElementById("approval-status");
+          statusEl.textContent = `状態：承認済み（${approver}／最終判断：${finalDecision}）`;
+          statusEl.className = "approval-status status-approved";
+          document.getElementById("approval-form").classList.add("hidden");
+          loadHistory();
+        } else {
+          alert("記録に失敗しました: " + (data.message || "不明なエラー"));
+        }
+      } catch (e) {
+        alert("通信エラー: " + e.message);
+      }
     }
 
     function copyResult() {
       if (!lastResult) return;
       const lines = [
-        `【輸出該非判定結果】${new Date().toLocaleString("ja-JP")}`,
-        `総合判定: ${lastResult.overall}`,
+        `【輸出該非 暫定スクリーニング結果】${new Date().toLocaleString("ja-JP")}`,
+        `※これはAIによる一次確認の補助です。最終的な該非判定は輸出管理担当者が公式の項目別対比表で確定してください。`,
+        `AI目安: ${lastResult.overall}`,
         "",
-        ...( lastResult.steps || []).map(s => `STEP${s.step} ${s.title}: ${s.result}\n  ${s.reason}`),
+        ...( lastResult.steps || []).map(s => `STEP${s.step} ${s.title}: ${s.result}（確信度:${s.confidence || "—"}）\n  ${s.reason}`),
         "",
+        ...((lastResult.unverifiable && lastResult.unverifiable.length)
+          ? ["【担当者が必ず確認すべき事項（AIでは確認不可）】", ...lastResult.unverifiable.map(x => "・" + x), ""]
+          : []),
         `【推奨アクション】\n${lastResult.recommendation}`,
         `【参考HSコード】${lastResult.hs_hint}`,
       ];
@@ -281,12 +408,12 @@
       const history = await res.json();
       const tbody = document.getElementById("history-body");
       if (!history.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty-row">判定履歴がありません</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-row">判定履歴がありません</td></tr>';
         return;
       }
       tbody.innerHTML = history.map(h => {
         const badge = h.overall === "OK"
-          ? '<span class="hist-badge badge-ok">OK</span>'
+          ? '<span class="hist-badge badge-ok">リスク低</span>'
           : h.overall === "要確認"
           ? '<span class="hist-badge badge-warn">要確認</span>'
           : '<span class="hist-badge badge-ng">要許可</span>';
@@ -296,14 +423,18 @@
         const rec = (h.recommendation || "").length > 50
           ? h.recommendation.slice(0, 50) + "…"
           : (h.recommendation || "—");
+        const statusCell = h.status === "承認済み"
+          ? `<span class="hist-badge badge-ok">承認済</span><br><span class="hist-final">${escapeHtml(h.final_decision || "")}<br>（${escapeHtml(h.approver || "")}）</span>`
+          : '<span class="hist-badge badge-warn">未確定</span>';
         return `<tr>
-          <td>${h.timestamp || ""}</td>
-          <td>${h.customer || "—"}</td>
-          <td>${h.material || "—"}</td>
-          <td>${h.destination || "—"}</td>
-          <td>${purpose}</td>
+          <td>${escapeHtml(h.timestamp || "")}</td>
+          <td>${escapeHtml(h.customer || "—")}</td>
+          <td>${escapeHtml(h.material || "—")}</td>
+          <td>${escapeHtml(h.destination || "—")}</td>
+          <td>${escapeHtml(purpose)}</td>
           <td>${badge}</td>
-          <td class="rec-cell">${rec}</td>
+          <td>${statusCell}</td>
+          <td class="rec-cell">${escapeHtml(rec)}</td>
         </tr>`;
       }).join("");
     }
