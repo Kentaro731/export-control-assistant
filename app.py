@@ -1,10 +1,12 @@
 import os
+import io
 import json
 from datetime import datetime
 from flask import (
-    Flask, render_template, jsonify, request, Response,
+    Flask, render_template, jsonify, request, Response, send_file,
 )
 import anthropic
+from openpyxl import Workbook, load_workbook
 from export_law_data import (
     is_white_country, is_designated_country,
     has_danger_keywords, has_military_end_use, get_hs_hint,
@@ -285,6 +287,169 @@ def approve_history(entry_id):
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
     return jsonify({"status": "ok"})
+
+
+# =====================================================================
+# Excel 取り込み機能（単票読込み・一括判定の入口）
+# =====================================================================
+
+# 入力フィールドの正規名と、Excel側のヘッダー候補（柔軟マッチング用）
+EXCEL_FIELD_ALIASES = {
+    "customer":    ["顧客名", "顧客", "客先", "得意先", "取引先", "社名", "会社名"],
+    "material":    ["材質", "品名", "材料", "品目", "材料名"],
+    "dimensions":  ["寸法", "サイズ", "規格", "サイズ・寸法"],
+    "purpose":     ["用途", "最終用途", "用途・最終用途", "使用用途"],
+    "trade_flow":  ["商流", "取引フロー", "中間業者", "流通経路", "ルート"],
+    "destination": ["仕向け国", "仕向地", "仕向先国", "輸出先", "輸出国", "送り先国", "国"],
+}
+
+EXCEL_FIELD_LABEL = {
+    "customer": "顧客名",
+    "material": "材質",
+    "dimensions": "寸法",
+    "purpose": "用途",
+    "trade_flow": "商流",
+    "destination": "仕向け国",
+}
+
+
+def _normalize_header(s):
+    if s is None:
+        return ""
+    return str(s).strip().replace("　", "").replace(" ", "").replace("\n", "")
+
+
+def _match_header_to_field(header):
+    """Excelヘッダー文字列を正規フィールド名にマッピング（部分一致を含む柔軟マッチング）"""
+    if not header:
+        return None
+    h = _normalize_header(header)
+    if not h:
+        return None
+    for field, aliases in EXCEL_FIELD_ALIASES.items():
+        for a in aliases:
+            an = _normalize_header(a)
+            if h == an or an in h or h in an:
+                return field
+    return None
+
+
+@app.route("/api/excel/template", methods=["GET"])
+def excel_template():
+    """貨物情報入力テンプレートの.xlsxをその場で生成して返す"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "貨物情報"
+    headers = ["顧客名", "材質", "寸法", "用途", "商流", "仕向け国"]
+    ws.append(headers)
+    # サンプル行（参考用・削除して使ってください）
+    ws.append([
+        "（例）株式会社〇〇製作所",
+        "アルミ A6061",
+        "200×300×10mm",
+        "自動車部品の試作用ブラケット材料",
+        "当社 → 商社A → 米国メーカー",
+        "アメリカ",
+    ])
+    # 列幅を整える
+    widths = [22, 22, 22, 32, 32, 16]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+    bio = io.BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    return send_file(
+        bio,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name="貨物情報テンプレート.xlsx",
+    )
+
+
+MAX_BATCH_ROWS = 20  # 一括判定の上限（コスト・タイムアウト保護）
+
+
+@app.route("/api/excel/parse", methods=["POST"])
+def excel_parse():
+    """アップロードされたExcelを解析し、貨物情報の行リストを返す（判定は別途）"""
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"status": "error", "message": "ファイルが添付されていません。"}), 400
+    name = (f.filename or "").lower()
+    if not (name.endswith(".xlsx") or name.endswith(".xlsm")):
+        return jsonify({"status": "error", "message": "Excel(.xlsx)ファイルをアップロードしてください。"}), 400
+    try:
+        wb = load_workbook(f, data_only=True, read_only=True)
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Excel読み込みに失敗しました: {e}"}), 400
+
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return jsonify({"status": "error", "message": "シートが空です。"}), 400
+
+    # ヘッダー行を検出（最初の非空行）
+    header_row_idx = -1
+    headers = []
+    for i, r in enumerate(rows):
+        if r and any(c is not None and str(c).strip() != "" for c in r):
+            header_row_idx = i
+            headers = list(r)
+            break
+    if header_row_idx < 0:
+        return jsonify({"status": "error", "message": "ヘッダー行が見つかりません。"}), 400
+
+    # 列インデックス→フィールドのマッピング
+    col_to_field = {}
+    for ci, h in enumerate(headers):
+        field = _match_header_to_field(h)
+        if field and field not in col_to_field.values():
+            col_to_field[ci] = field
+
+    if not col_to_field:
+        return jsonify({
+            "status": "error",
+            "message": "ヘッダーに認識可能な列が見つかりませんでした。テンプレートを参考に列名を設定してください（顧客名・材質・寸法・用途・商流・仕向け国）。"
+        }), 400
+
+    # データ行を抽出
+    parsed = []
+    skipped = 0
+    sample_marker = "（例）"
+    for r in rows[header_row_idx + 1:]:
+        if not r:
+            continue
+        item = {"customer": "", "material": "", "dimensions": "",
+                "purpose": "", "trade_flow": "", "destination": ""}
+        nonempty = False
+        for ci, field in col_to_field.items():
+            if ci < len(r) and r[ci] is not None:
+                v = str(r[ci]).strip()
+                if v:
+                    item[field] = v
+                    nonempty = True
+        if not nonempty:
+            continue
+        # サンプル行（テンプレの「（例）」始まり）は除外
+        if item.get("customer", "").startswith(sample_marker):
+            skipped += 1
+            continue
+        # 必須最低限：材質と仕向け国がないとスキップ
+        if not item["material"] or not item["destination"]:
+            skipped += 1
+            continue
+        parsed.append(item)
+        if len(parsed) >= MAX_BATCH_ROWS:
+            break
+
+    matched_fields = [EXCEL_FIELD_LABEL[v] for v in set(col_to_field.values())]
+    return jsonify({
+        "status": "ok",
+        "rows": parsed,
+        "skipped": skipped,
+        "matched_fields": matched_fields,
+        "max_batch_rows": MAX_BATCH_ROWS,
+    })
 
 
 if __name__ == "__main__":

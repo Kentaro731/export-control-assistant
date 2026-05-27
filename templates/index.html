@@ -20,6 +20,35 @@
     <section class="form-panel">
       <h2 class="panel-title">貨物情報を入力</h2>
 
+      <!-- Excel取込みパネル -->
+      <div class="excel-panel">
+        <div class="excel-row">
+          <a class="btn-excel-tmpl" href="/api/excel/template">📥 テンプレートをダウンロード</a>
+          <label class="btn-excel-up">
+            📤 Excelをアップロード
+            <input type="file" id="excel-file" accept=".xlsx,.xlsm" onchange="onExcelSelected()" hidden>
+          </label>
+        </div>
+        <div id="excel-status" class="excel-status hidden"></div>
+        <div id="excel-preview" class="excel-preview hidden">
+          <table class="excel-table">
+            <thead>
+              <tr>
+                <th style="width:32px;"></th>
+                <th>顧客名</th><th>材質</th><th>寸法</th><th>用途</th><th>商流</th><th>仕向け国</th>
+              </tr>
+            </thead>
+            <tbody id="excel-tbody"></tbody>
+          </table>
+          <div class="excel-actions">
+            <button class="btn-ghost" onclick="fillFormFromSelected()">📝 選択行をフォームに入力（単票）</button>
+            <button class="btn-primary" onclick="batchJudgeAll()">⚡ 全行を順次判定（一括）</button>
+          </div>
+        </div>
+        <div id="batch-progress" class="batch-progress hidden"></div>
+        <div id="batch-results" class="batch-results hidden"></div>
+      </div>
+
       <div class="form-group">
         <label>顧客名</label>
         <input type="text" id="customer" placeholder="例：株式会社〇〇製作所">
@@ -437,6 +466,124 @@
           <td class="rec-cell">${escapeHtml(rec)}</td>
         </tr>`;
       }).join("");
+    }
+
+    // ===== Excel 取り込み =====
+    let excelRows = [];
+
+    async function onExcelSelected() {
+      const fileInput = document.getElementById("excel-file");
+      const f = fileInput.files[0];
+      if (!f) return;
+      const status = document.getElementById("excel-status");
+      const preview = document.getElementById("excel-preview");
+      status.className = "excel-status status-info";
+      status.textContent = "Excelを解析中...";
+      status.classList.remove("hidden");
+      preview.classList.add("hidden");
+      document.getElementById("batch-results").classList.add("hidden");
+      document.getElementById("batch-progress").classList.add("hidden");
+      try {
+        const fd = new FormData();
+        fd.append("file", f);
+        const res = await fetch("/api/excel/parse", { method: "POST", body: fd });
+        const data = await res.json();
+        if (data.status !== "ok") {
+          status.className = "excel-status status-error";
+          status.textContent = "⚠ " + (data.message || "解析に失敗しました");
+          return;
+        }
+        excelRows = data.rows || [];
+        if (!excelRows.length) {
+          status.className = "excel-status status-error";
+          status.textContent = "⚠ 有効な行が見つかりませんでした（必須：材質・仕向け国）。";
+          return;
+        }
+        const matched = (data.matched_fields || []).join("／");
+        status.className = "excel-status status-info";
+        status.textContent = `✅ ${excelRows.length}件 読込み完了（認識列：${matched}／スキップ ${data.skipped || 0}件／上限 ${data.max_batch_rows}件）`;
+        renderExcelPreview();
+        preview.classList.remove("hidden");
+      } catch (e) {
+        status.className = "excel-status status-error";
+        status.textContent = "通信エラー: " + e.message;
+      } finally {
+        fileInput.value = "";
+      }
+    }
+
+    function renderExcelPreview() {
+      const tbody = document.getElementById("excel-tbody");
+      tbody.innerHTML = excelRows.map((r, i) => `
+        <tr>
+          <td><input type="radio" name="excel-row-sel" value="${i}" ${i===0?"checked":""}></td>
+          <td>${escapeHtml(r.customer || "—")}</td>
+          <td>${escapeHtml(r.material || "—")}</td>
+          <td>${escapeHtml(r.dimensions || "—")}</td>
+          <td>${escapeHtml((r.purpose || "—").slice(0,40))}${(r.purpose||"").length>40?"…":""}</td>
+          <td>${escapeHtml((r.trade_flow || "—").slice(0,30))}${(r.trade_flow||"").length>30?"…":""}</td>
+          <td>${escapeHtml(r.destination || "—")}</td>
+        </tr>`).join("");
+    }
+
+    function fillFormFromSelected() {
+      const sel = document.querySelector('input[name="excel-row-sel"]:checked');
+      if (!sel || !excelRows.length) { alert("行が選択されていません。"); return; }
+      const r = excelRows[parseInt(sel.value, 10)];
+      document.getElementById("customer").value = r.customer || "";
+      document.getElementById("material").value = r.material || "";
+      document.getElementById("dimensions").value = r.dimensions || "";
+      document.getElementById("purpose").value = r.purpose || "";
+      document.getElementById("trade_flow").value = r.trade_flow || "";
+      document.getElementById("destination").value = r.destination || "";
+      checkWhiteCountry();
+      const status = document.getElementById("excel-status");
+      status.className = "excel-status status-success";
+      status.textContent = "✅ 選択行をフォームに反映しました。内容を確認のうえ「AI 暫定スクリーニングを実行」を押してください。";
+    }
+
+    async function batchJudgeAll() {
+      if (!excelRows.length) { alert("読込み済みのデータがありません。"); return; }
+      if (!confirm(`${excelRows.length}件を順次判定します。よろしいですか？（数分かかります）`)) return;
+      const prog = document.getElementById("batch-progress");
+      const out = document.getElementById("batch-results");
+      prog.classList.remove("hidden");
+      out.classList.remove("hidden");
+      out.innerHTML = '<h3>一括判定結果（AI暫定スクリーニング・要担当者承認）</h3><table class="batch-table"><thead><tr><th>#</th><th>顧客</th><th>材質</th><th>仕向地</th><th>AI目安</th><th>STEP1</th><th>確信度</th><th>承認</th></tr></thead><tbody id="batch-tbody"></tbody></table>';
+      const tbody = document.getElementById("batch-tbody");
+      const total = excelRows.length;
+      for (let i = 0; i < total; i++) {
+        prog.textContent = `判定中 ${i+1} / ${total} ...`;
+        const r = excelRows[i];
+        try {
+          const res = await fetch("/api/judge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(r),
+          });
+          const data = await res.json();
+          const result = data.result || {};
+          const step1 = (result.steps || []).find(s => s.step === 1) || {};
+          const cls = result.overall === "OK" ? "badge-ok" :
+                      result.overall === "要確認" ? "badge-warn" : "badge-ng";
+          const labelMap = {"OK":"リスク低", "要確認":"要確認", "要許可":"要許可"};
+          const entryId = data.entry_id || "";
+          tbody.innerHTML += `<tr>
+            <td>${i+1}</td>
+            <td>${escapeHtml(r.customer || "—")}</td>
+            <td>${escapeHtml(r.material || "—")}</td>
+            <td>${escapeHtml(r.destination || "—")}</td>
+            <td><span class="hist-badge ${cls}">${escapeHtml(labelMap[result.overall] || result.overall || "—")}</span></td>
+            <td>${escapeHtml(step1.result || "—")}</td>
+            <td>${escapeHtml(step1.confidence || "—")}</td>
+            <td><span class="hist-badge badge-warn">未確定</span></td>
+          </tr>`;
+        } catch (e) {
+          tbody.innerHTML += `<tr><td>${i+1}</td><td colspan="7" class="empty-row">エラー：${escapeHtml(e.message)}</td></tr>`;
+        }
+      }
+      prog.textContent = `完了：${total}件 判定済み。各案件の最終判断は履歴から個別承認してください（履歴下部）。`;
+      loadHistory();
     }
 
     loadHistory();

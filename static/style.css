@@ -413,6 +413,111 @@ select option { background: var(--surface2); }
 }
 .btn-approve:hover { filter: brightness(1.08); }
 .hist-final { font-size: 11px; color: var(--text-muted); }
+
+/* === Excel 取り込みパネル === */
+.excel-panel {
+  background: var(--surface2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 16px;
+}
+.excel-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.btn-excel-tmpl, .btn-excel-up {
+  flex: 1 1 auto;
+  text-align: center;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+.btn-excel-tmpl:hover, .btn-excel-up:hover {
+  background: var(--bg);
+  border-color: var(--accent);
+}
+.excel-status {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.status-info    { background: rgba(88,166,255,0.10); color: var(--accent); border: 1px solid var(--accent); }
+.status-success { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok); }
+.status-error   { background: var(--ng-bg); color: var(--ng); border: 1px solid var(--ng); }
+
+.excel-preview {
+  margin-top: 12px;
+  overflow-x: auto;
+}
+.excel-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.excel-table th, .excel-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.excel-table th {
+  background: var(--bg);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.excel-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.btn-ghost, .btn-primary {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-ghost { background: var(--surface); color: var(--text); }
+.btn-ghost:hover { background: var(--bg); border-color: var(--accent); }
+.btn-primary { background: var(--accent); color: #06223f; border-color: var(--accent); }
+.btn-primary:hover { filter: brightness(1.08); }
+
+.batch-progress {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--warn);
+}
+.batch-results {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.batch-results h3 { font-size: 13px; margin-bottom: 8px; }
+.batch-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.batch-table th, .batch-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 6px 8px;
+  text-align: left;
+}
+.batch-table th { background: var(--surface2); color: var(--text-muted); }
 .history-table tr:hover td { background: var(--surface2); }
 
 .hist-badge {
