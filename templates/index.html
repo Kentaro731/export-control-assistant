@@ -353,8 +353,8 @@
         <div class="doc-check-bar">
           <p class="doc-check-note">
             判定フロー内で言及している公式資料の一覧です。
-            「最新確認を実行」ボタンで各ページへのアクセス状況と最終更新日時を取得し、
-            資料が現在も参照可能かどうかを確認できます。
+            「最新確認を実行」ボタンで、<b>このブラウザから</b>各ページへのアクセス可否を確認します。
+            リンクが有効かどうかをワンクリックで検証できます。
           </p>
           <button class="btn-check-docs" id="btn-check-docs" onclick="checkDocs()">
             <span id="check-docs-label">🔄 最新確認を実行</span>
@@ -404,7 +404,7 @@
           </tbody>
         </table>
         <p style="margin-top:8px; font-size:11px; color:var(--text-muted);">
-          ※「最新確認を実行」はサーバーから各ページへのアクセス可否と最終更新日時を確認します。
+          ※「最新確認を実行」はこのブラウザから直接各URLにアクセスして到達確認を行います。
           法令の内容変更は経産省サイトで必ず直接ご確認ください。
         </p>
       </div>
@@ -1398,7 +1398,33 @@
       }
     }
 
-    // ===== 参照資料の最新確認 =====
+    // ===== 参照資料の最新確認（ブラウザ直接アクセス方式） =====
+    // ※ Renderサーバーはシンガポール拠点のため経産省(meti.go.jp)がブロックされる。
+    //    ブラウザから直接 no-cors fetch を行い、日本からのアクセス可否を確認する。
+    const DOC_REFS_CLIENT = [
+      { id: 'matrix',    url: 'https://www.meti.go.jp/policy/anpo/matrix_intro.html' },
+      { id: 'anpo_top',  url: 'https://www.meti.go.jp/policy/anpo/' },
+      { id: 'whitelist', url: 'https://www.meti.go.jp/policy/anpo/apply08.html' },
+      { id: 'catchall',  url: 'https://www.meti.go.jp/policy/anpo/catchall.html' },
+      { id: 'egov_law',  url: 'https://laws.e-gov.go.jp/law/324CO0000000378/' },
+    ];
+
+    async function _checkOneUrl(url) {
+      // no-cors: クロスオリジンへのリクエストを許可（レスポンス内容は取得不可だが到達確認は可能）
+      // 到達できれば opaque response を返す（Promiseがresolve）
+      // ネットワークエラー・タイムアウトなら TypeError をthrow
+      try {
+        const ctrl = new AbortController();
+        const tid  = setTimeout(() => ctrl.abort(), 10000); // 10秒タイムアウト
+        await fetch(url, { mode: 'no-cors', method: 'GET', signal: ctrl.signal });
+        clearTimeout(tid);
+        return { reachable: true };
+      } catch (e) {
+        const msg = e.name === 'AbortError' ? 'タイムアウト（10秒）' : 'ネットワークエラー';
+        return { reachable: false, error: msg };
+      }
+    }
+
     async function checkDocs() {
       const btn     = document.getElementById('btn-check-docs');
       const label   = document.getElementById('check-docs-label');
@@ -1412,41 +1438,32 @@
         td.innerHTML = '<span class="doc-badge badge-checking">確認中…</span>';
       });
 
-      try {
-        const res  = await fetch('/api/check_docs');
-        const data = await res.json();
-        if (data.status !== 'ok') throw new Error(data.message || 'サーバーエラー');
+      // 5件を並列チェック（ブラウザから直接）
+      const results = await Promise.all(
+        DOC_REFS_CLIENT.map(async doc => ({ ...doc, ...(await _checkOneUrl(doc.url)) }))
+      );
 
-        data.results.forEach(r => {
-          const row = document.querySelector(`#doc-refs-tbody tr[data-doc-id="${r.id}"]`);
-          if (!row) return;
-          const td = row.querySelector('.doc-status');
-          if (r.reachable) {
-            const lm = (r.last_modified && r.last_modified !== '—')
-              ? `<br><span class="doc-lm">最終更新: ${escapeHtml(r.last_modified)}</span>`
-              : '<br><span class="doc-lm">最終更新日時: 非公開</span>';
-            td.innerHTML = `<span class="doc-badge badge-doc-ok">✅ アクセスOK</span>${lm}`;
-          } else {
-            const err = r.error ? `<br><span class="doc-lm">${escapeHtml(r.error)}</span>` : '';
-            td.innerHTML = `<span class="doc-badge badge-doc-error">⚠️ アクセス不可</span>${err}`;
-          }
-        });
+      const now = new Date().toLocaleString('ja-JP');
+      results.forEach(r => {
+        const row = document.querySelector(`#doc-refs-tbody tr[data-doc-id="${r.id}"]`);
+        if (!row) return;
+        const td = row.querySelector('.doc-status');
+        if (r.reachable) {
+          td.innerHTML = `<span class="doc-badge badge-doc-ok">✅ アクセスOK</span><br><span class="doc-lm">確認時刻: ${now}</span>`;
+        } else {
+          td.innerHTML = `<span class="doc-badge badge-doc-error">⚠️ アクセス不可</span><br><span class="doc-lm">${escapeHtml(r.error || '')}</span>`;
+        }
+      });
 
-        const okCount = data.results.filter(r => r.reachable).length;
-        showToast(
-          `✅ ${data.results.length}件の資料を確認しました（${okCount}件 アクセスOK）\n${data.checked_at}`,
-          'success'
-        );
-      } catch (e) {
-        document.querySelectorAll('#doc-refs-tbody .doc-status').forEach(td => {
-          td.innerHTML = '<span class="doc-badge badge-doc-error">エラー</span>';
-        });
-        showToast('⚠️ 確認中にエラーが発生しました: ' + e.message, 'error');
-      } finally {
-        btn.disabled = false;
-        label.textContent = '🔄 最新確認を実行';
-        spinner.classList.add('hidden');
-      }
+      const okCount = results.filter(r => r.reachable).length;
+      showToast(
+        `✅ ${results.length}件の資料を確認しました（${okCount}件 アクセスOK）\n${now}（ブラウザから直接確認）`,
+        okCount === results.length ? 'success' : 'warn'
+      );
+
+      btn.disabled = false;
+      label.textContent = '🔄 最新確認を実行';
+      spinner.classList.add('hidden');
     }
 
     // ===== トースト通知 =====
