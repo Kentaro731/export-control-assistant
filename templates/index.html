@@ -119,6 +119,20 @@
 
     <!-- 右：判定結果 -->
     <section class="result-panel">
+
+      <!-- ===== 一括判定ナビゲーションバー（一括実行時のみ表示） ===== -->
+      <div id="batch-nav-bar" class="batch-nav-bar hidden">
+        <div class="bnav-header">
+          <div class="bnav-controls">
+            <button class="btn-bnav" id="batch-nav-prev" onclick="batchNavPrev()" disabled>&#8592; 前へ</button>
+            <span id="batch-nav-pos" class="bnav-pos">— / —</span>
+            <button class="btn-bnav" id="batch-nav-next" onclick="batchNavNext()" disabled>次へ &#8594;</button>
+          </div>
+          <span id="batch-nav-meta" class="bnav-meta"></span>
+        </div>
+        <div id="bnav-dots" class="bnav-dots"></div>
+      </div>
+
       <div id="result-placeholder" class="result-placeholder">
         <div class="placeholder-icon">⚖️</div>
         <p>左側のフォームに入力して<br>「AI 該非判定を実行」を押してください</p>
@@ -1012,8 +1026,13 @@
       let successCount = 0;
       let errorCount = 0;
 
+      // 右パネルのナビゲーションバーを初期化
+      _initBatchNav(total);
+
       for (let i = 0; i < total; i++) {
         const rowLabel = `判定中 ${i+1} / ${total}`;
+        prog.textContent = rowLabel + " ...";
+        _markDotRunning(i);
         const r = excelRows[i];
 
         try {
@@ -1025,7 +1044,7 @@
                       result.overall === "要確認" ? "badge-warn" : "badge-ng";
           const labelMap = {"OK":"リスク低", "要確認":"要確認", "要許可":"要許可"};
           successCount++;
-          tbody.innerHTML += `<tr>
+          tbody.innerHTML += `<tr style="cursor:pointer" onclick="_showBatchAt(${i})">
             <td>${i+1}</td>
             <td>${escapeHtml(r.customer || "—")}</td>
             <td>${escapeHtml(r.material || "—")}</td>
@@ -1035,20 +1054,133 @@
             <td>${escapeHtml(step1.confidence || "—")}</td>
             <td><span class="hist-badge badge-warn">未確定</span></td>
           </tr>`;
+          // 右パネルに結果を流し込む
+          _storeBatchResult(i, r, data, false);
         } catch (e) {
           errorCount++;
           tbody.innerHTML += `<tr><td>${i+1}</td><td colspan="7" class="empty-row">⚠️ ${escapeHtml(e.message)}</td></tr>`;
+          _storeBatchResult(i, r, null, true);
         }
       }
 
-      prog.textContent = `完了：${total}件中 ${successCount}件 成功 / ${errorCount}件 エラー。最終判断は履歴から個別承認してください（画面下部）。`;
+      prog.textContent = `完了：${total}件中 ${successCount}件 成功 / ${errorCount}件 エラー。右パネルで内容を確認し、履歴から個別承認してください（画面下部）。`;
       prog.style.background = errorCount > 0 ? "" : "var(--ok-bg)";
       prog.style.borderColor = errorCount > 0 ? "" : "var(--ok)";
       prog.style.color       = errorCount > 0 ? "" : "var(--ok)";
+      _updateBatchNavUI();
       loadHistory();
     }
 
     loadHistory();
+
+    // ===== 一括判定ナビゲーション =====
+    let batchResultsStore = [];  // [{result, entry_id, row} | null]  null=未完
+    let batchTotalCount   = 0;
+    let batchCurrentIdx   = -1;
+
+    function _initBatchNav(total) {
+      batchResultsStore = new Array(total).fill(null);
+      batchTotalCount   = total;
+      batchCurrentIdx   = -1;
+      // ドット初期化
+      const dotsEl = document.getElementById('bnav-dots');
+      dotsEl.innerHTML = '';
+      for (let i = 0; i < total; i++) {
+        const d = document.createElement('span');
+        d.className = 'bnav-dot';
+        d.id = `bnav-dot-${i}`;
+        d.title = `${i + 1}件目`;
+        d.onclick = () => { if (batchResultsStore[i]) _showBatchAt(i); };
+        dotsEl.appendChild(d);
+      }
+      document.getElementById('batch-nav-bar').classList.remove('hidden');
+      document.getElementById('batch-nav-pos').textContent = `— / ${total}`;
+      document.getElementById('batch-nav-meta').textContent = `判定開始中...`;
+      document.getElementById('batch-nav-prev').disabled = true;
+      document.getElementById('batch-nav-next').disabled = true;
+      // 右パネルはプレースホルダーに戻す
+      document.getElementById('result-placeholder').classList.remove('hidden');
+      document.getElementById('result-content').classList.add('hidden');
+    }
+
+    function _markDotRunning(idx) {
+      const d = document.getElementById(`bnav-dot-${idx}`);
+      if (d) d.className = 'bnav-dot dot-running';
+    }
+
+    function _storeBatchResult(idx, row, data, isError) {
+      const dotEl = document.getElementById(`bnav-dot-${idx}`);
+      if (isError) {
+        batchResultsStore[idx] = null;  // エラーはnullのまま
+        if (dotEl) dotEl.className = 'bnav-dot dot-error';
+        _updateBatchNavUI();
+        return;
+      }
+      batchResultsStore[idx] = { result: data.result, entry_id: data.entry_id || null, row };
+      if (dotEl) dotEl.className = 'bnav-dot dot-done';
+      // 自動表示：最初の結果 or 直前の結果を見ていた場合に自動進める
+      const shouldAutoShow = batchCurrentIdx < 0 || batchCurrentIdx === idx - 1 || batchCurrentIdx === idx;
+      if (shouldAutoShow) {
+        _showBatchAt(idx);
+      } else {
+        _updateBatchNavUI();
+      }
+    }
+
+    function _showBatchAt(idx) {
+      const item = batchResultsStore[idx];
+      if (!item) return;
+      batchCurrentIdx = idx;
+      lastEntryId = item.entry_id;
+      renderResult(item.result);
+      _updateBatchNavUI();
+      // 現在ドットをハイライト
+      document.querySelectorAll('.bnav-dot').forEach((d, i) => {
+        if (d.classList.contains('dot-error')) return;
+        d.classList.toggle('dot-current', i === idx);
+        if (i !== idx && batchResultsStore[i]) d.className = 'bnav-dot dot-done';
+      });
+    }
+
+    function _updateBatchNavUI() {
+      const done     = batchResultsStore.filter(Boolean).length;
+      const total    = batchTotalCount;
+      const idx      = batchCurrentIdx;
+      const posEl    = document.getElementById('batch-nav-pos');
+      const metaEl   = document.getElementById('batch-nav-meta');
+      const prevBtn  = document.getElementById('batch-nav-prev');
+      const nextBtn  = document.getElementById('batch-nav-next');
+
+      posEl.textContent = idx >= 0 ? `${idx + 1} / ${total}` : `— / ${total}`;
+      prevBtn.disabled  = idx <= 0;
+      // 「次へ」は完了済みのうち次があるとき有効
+      const nextAvail = batchResultsStore.slice(idx + 1).findIndex(Boolean);
+      nextBtn.disabled  = nextAvail < 0;
+
+      const item = idx >= 0 ? batchResultsStore[idx] : null;
+      if (item && item.row) {
+        const r = item.row;
+        const parts = [r.customer, r.material, r.destination].filter(Boolean);
+        metaEl.textContent = parts.join(' · ');
+      } else {
+        const remaining = total - done;
+        metaEl.textContent = remaining > 0 ? `判定中... (${done}/${total} 完了)` : `${done}件すべて完了`;
+      }
+    }
+
+    function batchNavPrev() {
+      if (batchCurrentIdx <= 0) return;
+      // 直前の完了済みアイテムを探す
+      for (let i = batchCurrentIdx - 1; i >= 0; i--) {
+        if (batchResultsStore[i]) { _showBatchAt(i); return; }
+      }
+    }
+
+    function batchNavNext() {
+      for (let i = batchCurrentIdx + 1; i < batchTotalCount; i++) {
+        if (batchResultsStore[i]) { _showBatchAt(i); return; }
+      }
+    }
 
     // ===== 参照資料の最新確認 =====
     async function checkDocs() {

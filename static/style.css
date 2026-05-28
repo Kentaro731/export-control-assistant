@@ -902,6 +902,85 @@ select option { background: var(--surface2); }
 .badge-doc-error { background: var(--ng-bg);    color: var(--ng);         border: 1px solid var(--ng); }
 
 /* ===== トースト通知 ===== */
+/* ===== バッチ結果ナビゲーションバー ===== */
+.batch-nav-bar {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bnav-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.bnav-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-bnav {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.btn-bnav:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn-bnav:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.bnav-pos {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 54px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.bnav-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex: 1;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bnav-dots {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.bnav-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background 0.25s;
+  cursor: default;
+  title: '';
+}
+.bnav-dot.dot-done    { background: var(--ok); }
+.bnav-dot.dot-current { background: var(--accent); box-shadow: 0 0 0 2px #1c3a5e; }
+.bnav-dot.dot-error   { background: var(--ng); }
+.bnav-dot.dot-running { background: var(--warn); }
+
 .toast-container {
   position: fixed;
   bottom: 28px;
