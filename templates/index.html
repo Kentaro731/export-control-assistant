@@ -51,7 +51,7 @@
           </table>
           <div class="excel-actions">
             <button class="btn-ghost" onclick="fillFormFromSelected()">📝 選択行をフォームに入力（単票）</button>
-            <button class="btn-primary" onclick="batchJudgeAll()">⚡ 全行を順次判定（一括）</button>
+            <button class="btn-ghost" onclick="batchJudgeAll(false)">🔄 再判定（全行）</button>
           </div>
         </div>
         <div id="batch-progress" class="batch-progress hidden"></div>
@@ -1121,6 +1121,8 @@
         status.textContent = `✅ ${excelRows.length}件 読込み完了（認識列：${matched}／スキップ ${data.skipped || 0}件／上限 ${data.max_batch_rows}件）`;
         renderExcelPreview();
         preview.classList.remove("hidden");
+        // アップロード完了 → 自動で一括判定を開始
+        batchJudgeAll(true);
       } catch (e) {
         status.className = "excel-status status-error";
         status.textContent = "通信エラー: " + e.message;
@@ -1222,9 +1224,11 @@
       }
     }
 
-    async function batchJudgeAll() {
+    async function batchJudgeAll(auto = false) {
       if (!excelRows.length) { alert("読込み済みのデータがありません。"); return; }
-      if (!confirm(`${excelRows.length}件を順次判定します。よろしいですか？（1件あたり約30秒、合計${Math.ceil(excelRows.length * 0.6)}分程度）`)) return;
+      // auto=true（アップロード直後の自動起動）はconfirmをスキップ
+      // auto=false（手動の再判定ボタン）は確認ダイアログを表示
+      if (!auto && !confirm(`${excelRows.length}件を再判定します。よろしいですか？`)) return;
       const prog = document.getElementById("batch-progress");
       const out = document.getElementById("batch-results");
       prog.classList.remove("hidden");
