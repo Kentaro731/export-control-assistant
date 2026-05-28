@@ -1,6 +1,8 @@
 import os
 import io
 import json
+import threading
+import uuid as _uuid
 from datetime import datetime
 from flask import (
     Flask, render_template, jsonify, request, Response, send_file,
@@ -15,6 +17,15 @@ from export_law_data import (
 
 app = Flask(__name__)
 client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
+# =====================================================================
+# バックグラウンドジョブ管理（一括判定のタイムアウト対策）
+# POST /api/judge → 即座に job_id を返す
+# GET  /api/judge/status/<job_id> → 結果をポーリング取得
+# =====================================================================
+_jobs: dict = {}           # job_id -> {"status": "processing"|"ok"|"error", ...}
+_jobs_lock = threading.Lock()
+_history_lock = threading.Lock()   # save_history の排他制御
 
 # === Basic認証（社内ポータルと共通の資格情報で統一）===
 # 資格情報は環境変数 BASIC_AUTH_USER / BASIC_AUTH_PASS で設定する。
@@ -125,11 +136,12 @@ def load_history():
 
 
 def save_history(entry):
-    history = load_history()
-    history.insert(0, entry)
-    history = history[:100]  # 最新100件のみ保持
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(history, f, ensure_ascii=False, indent=2)
+    with _history_lock:
+        history = load_history()
+        history.insert(0, entry)
+        history = history[:100]  # 最新100件のみ保持
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
 
 
 @app.route("/healthz")
@@ -145,23 +157,34 @@ def index():
 
 @app.route("/api/judge", methods=["POST"])
 def judge():
+    """判定リクエストを受け付け、バックグラウンドで処理して job_id を即返す。
+    クライアントは GET /api/judge/status/<job_id> でポーリングして結果を取得する。
+    Render のプロキシタイムアウト（75秒）とgunicorn worker kill を回避する方式。
+    """
     data = request.json
-    customer = data.get("customer", "")
-    material = data.get("material", "")
-    dimensions = data.get("dimensions", "")
-    purpose = data.get("purpose", "")
-    trade_flow = data.get("trade_flow", "")
+    customer    = data.get("customer", "")
+    material    = data.get("material", "")
+    dimensions  = data.get("dimensions", "")
+    purpose     = data.get("purpose", "")
+    trade_flow  = data.get("trade_flow", "")
     destination = data.get("destination", "")
 
-    # 事前チェック（ルールベース補助）
-    is_white = is_white_country(destination)
+    # 事前チェック（ルールベース補助）—— リクエストスレッドで即時実行
+    is_white    = is_white_country(destination)
     is_designated = is_designated_country(destination)
-    scan_text = purpose + " " + trade_flow + " " + customer + " " + material
-    danger_kws = has_danger_keywords(scan_text)
+    scan_text   = purpose + " " + trade_flow + " " + customer + " " + material
+    danger_kws  = has_danger_keywords(scan_text)
     military_kws = has_military_end_use(scan_text)
-    hs_hint = get_hs_hint(material)
+    hs_hint     = get_hs_hint(material)
 
-    user_message = f"""以下の輸出貨物について、5ステップの該非判定を行ってください。
+    # ジョブ登録
+    job_id = str(_uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {"status": "processing"}
+
+    # ——— バックグラウンドスレッドで Claude API 呼び出し ———
+    def run_judgment():
+        user_message = f"""以下の輸出貨物について、5ステップの該非判定を行ってください。
 
 【顧客名】{customer}
 【材質】{material}
@@ -182,69 +205,87 @@ def judge():
 
 JSON形式のみで回答してください。"""
 
-    try:
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=2000,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
-        )
-        raw = response.content[0].text.strip()
-        # JSON部分のみ抽出
-        if "```json" in raw:
-            raw = raw.split("```json")[1].split("```")[0].strip()
-        elif "```" in raw:
-            raw = raw.split("```")[1].split("```")[0].strip()
+        try:
+            response = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=2000,
+                system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_message}],
+            )
+            raw = response.content[0].text.strip()
+            if "```json" in raw:
+                raw = raw.split("```json")[1].split("```")[0].strip()
+            elif "```" in raw:
+                raw = raw.split("```")[1].split("```")[0].strip()
 
-        result = json.loads(raw)
-        result["hs_hint"] = result.get("hs_hint") or hs_hint
+            result = json.loads(raw)
+            result["hs_hint"] = result.get("hs_hint") or hs_hint
 
-        # 安全ネット（ガードレール）：軍事用途キーワードを検出しているのに
-        # AIが「OK」と返した場合は、安全側に倒して最低「要確認」へ強制的に引き上げる。
-        if military_kws and result.get("overall") == "OK":
-            result["overall"] = "要確認"
-            warn = f"※システム自動補正：軍事用途キーワード（{', '.join(military_kws)}）を検出したため、判定を『要確認』に引き上げました。別表第1（リスト規制）該当性を担当者が必ず確認してください。"
-            result["recommendation"] = warn + " " + result.get("recommendation", "")
+            # 安全ネット（ガードレール）
+            if military_kws and result.get("overall") == "OK":
+                result["overall"] = "要確認"
+                warn = f"※システム自動補正：軍事用途キーワード（{', '.join(military_kws)}）を検出したため、判定を『要確認』に引き上げました。別表第1（リスト規制）該当性を担当者が必ず確認してください。"
+                result["recommendation"] = warn + " " + result.get("recommendation", "")
 
-        entry = {
-            "id": datetime.now().strftime("%Y%m%d%H%M%S"),
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "customer": customer,
-            "material": material,
-            "destination": destination,
-            "purpose": purpose,
-            "overall": result.get("overall", "要確認"),
-            "recommendation": result.get("recommendation", ""),
-            # 人間の承認ワークフロー（初期は未確定）
-            "status": "未確定",
-            "approver": "",
-            "approved_at": "",
-            "final_decision": "",
-            "taikohyo_checked": False,
-        }
-        save_history(entry)
+            entry = {
+                "id": datetime.now().strftime("%Y%m%d%H%M%S%f"),
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "customer": customer,
+                "material": material,
+                "destination": destination,
+                "purpose": purpose,
+                "overall": result.get("overall", "要確認"),
+                "recommendation": result.get("recommendation", ""),
+                "status": "未確定",
+                "approver": "",
+                "approved_at": "",
+                "final_decision": "",
+                "taikohyo_checked": False,
+            }
+            save_history(entry)
 
-        return jsonify({"status": "ok", "result": result, "entry_id": entry["id"]})
+            with _jobs_lock:
+                _jobs[job_id] = {"status": "ok", "result": result, "entry_id": entry["id"]}
 
-    except json.JSONDecodeError:
-        return jsonify({"status": "ok", "result": {
-            "overall": "要確認",
-            "steps": [
-                {"step": i, "title": t, "result": "確認中", "reason": "AI応答の解析に失敗しました。再度お試しください。"}
-                for i, t in enumerate([
-                    "別表第1（1〜15項）該当確認",
-                    "16項（キャッチオール）確認",
-                    "仕向地（別表第3）確認",
-                    "用途確認（キャッチオール）",
-                    "総合判断",
-                ], 1)
-            ],
-            "recommendation": "AI応答の解析に失敗しました。入力内容を確認の上、再度お試しください。",
-            "hs_hint": hs_hint,
-            "caution": "本ツールはAI補助判定です。最終判断は担当者が行ってください。",
-        }})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        except json.JSONDecodeError:
+            fallback = {
+                "overall": "要確認",
+                "steps": [
+                    {"step": i, "title": t, "result": "確認中",
+                     "reason": "AI応答の解析に失敗しました。再度お試しください。",
+                     "confidence": "低"}
+                    for i, t in enumerate([
+                        "別表第1（1〜15項）該当確認",
+                        "16項（キャッチオール）確認",
+                        "仕向地（別表第3）確認",
+                        "用途確認（キャッチオール）",
+                        "総合判断",
+                    ], 1)
+                ],
+                "unverifiable": [],
+                "recommendation": "AI応答の解析に失敗しました。入力内容を確認の上、再度お試しください。",
+                "hs_hint": hs_hint,
+                "caution": "本ツールはAI補助判定です。最終判断は担当者が行ってください。",
+            }
+            with _jobs_lock:
+                _jobs[job_id] = {"status": "ok", "result": fallback}
+
+        except Exception as e:
+            with _jobs_lock:
+                _jobs[job_id] = {"status": "error", "message": str(e)}
+
+    threading.Thread(target=run_judgment, daemon=True).start()
+    return jsonify({"status": "processing", "job_id": job_id})
+
+
+@app.route("/api/judge/status/<job_id>", methods=["GET"])
+def judge_status(job_id):
+    """バックグラウンドジョブの結果をポーリング取得する"""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if job is None:
+        return jsonify({"status": "error", "message": "ジョブが見つかりません（IDが無効か期限切れ）"}), 404
+    return jsonify(job)
 
 
 @app.route("/api/history", methods=["GET"])

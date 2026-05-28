@@ -668,31 +668,27 @@
         return;
       }
 
+      const btnLoading = document.getElementById("btn-loading");
       document.getElementById("btn-text").classList.add("hidden");
-      document.getElementById("btn-loading").classList.remove("hidden");
+      btnLoading.classList.remove("hidden");
+      btnLoading.textContent = "判定中...";
       document.getElementById("judge-btn").disabled = true;
       document.getElementById("result-placeholder").classList.add("hidden");
       document.getElementById("result-content").classList.add("hidden");
 
       try {
-        const res = await fetch("/api/judge", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+        const data = await judgeAsync(payload, (status) => {
+          btnLoading.textContent = status;
         });
-        const data = await res.json();
-        if (data.status === "ok") {
-          lastEntryId = data.entry_id || null;
-          renderResult(data.result);
-          loadHistory();
-        } else {
-          alert("エラーが発生しました: " + (data.message || "不明なエラー"));
-        }
+        lastEntryId = data.entry_id || null;
+        renderResult(data.result);
+        loadHistory();
       } catch (e) {
         alert("通信エラー: " + e.message);
       } finally {
         document.getElementById("btn-text").classList.remove("hidden");
-        document.getElementById("btn-loading").classList.add("hidden");
+        btnLoading.classList.add("hidden");
+        btnLoading.textContent = "判定中...";
         document.getElementById("judge-btn").disabled = false;
       }
     }
@@ -943,31 +939,61 @@
     // ===== ユーティリティ =====
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+    /**
+     * バックグラウンドジョブ方式の判定。
+     * 1) POST /api/judge → job_id を即取得（<1秒）
+     * 2) GET  /api/judge/status/<job_id> を3秒おきにポーリング → 完了次第返す
+     * onProgress: (msg) => void  — 省略可。ポーリング中の状態テキストを通知する。
+     */
+    async function judgeAsync(payload, onProgress) {
+      // Step1: ジョブ登録（即返る）
+      const startRes = await fetch("/api/judge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!startRes.ok) {
+        throw new Error(`サーバーエラー（HTTP ${startRes.status}）`);
+      }
+      const startData = await startRes.json();
+      if (startData.status === "error") throw new Error(startData.message || "サーバーエラー");
+      // 互換：もし同期レスポンス（旧形式）が来たらそのまま返す
+      if (startData.status !== "processing") return startData;
+
+      const jobId = startData.job_id;
+
+      // Step2: ポーリング（最大120秒 / 3秒おき）
+      const POLL_MS  = 3000;
+      const MAX_MS   = 120000;
+      const t0       = Date.now();
+      let pollCount  = 0;
+      while (Date.now() - t0 < MAX_MS) {
+        await sleep(POLL_MS);
+        pollCount++;
+        if (onProgress) onProgress(`AI判定中... ${pollCount * 3}秒経過`);
+        const pollRes  = await fetch(`/api/judge/status/${jobId}`);
+        const pollData = await pollRes.json();
+        if (pollData.status === "processing") continue;
+        if (pollData.status === "error") throw new Error(pollData.message || "サーバーエラー");
+        return pollData;   // status === "ok"
+      }
+      throw new Error("タイムアウト：判定に時間がかかりすぎています。再度お試しください。");
+    }
+
     // 1件判定（失敗時に1回だけ自動リトライ）
     async function judgeOneWithRetry(payload, rowLabel, prog) {
       const MAX_ATTEMPTS = 2;
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
           if (attempt > 1) {
-            prog.textContent = `${rowLabel} — サーバーエラーのため5秒後にリトライ中（${attempt}/${MAX_ATTEMPTS}）...`;
+            prog.textContent = `${rowLabel} — エラーのため5秒後にリトライ（${attempt}/${MAX_ATTEMPTS}）...`;
             await sleep(5000);
           }
-          const res = await fetch("/api/judge", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
+          return await judgeAsync(payload, (status) => {
+            prog.textContent = `${rowLabel} — ${status}`;
           });
-          const text = await res.text();
-          let data;
-          try { data = JSON.parse(text); }
-          catch (_) {
-            if (attempt < MAX_ATTEMPTS) continue;       // リトライへ
-            throw new Error(`サーバーエラー（HTTP ${res.status}）`);
-          }
-          if (data.status === "error") throw new Error(data.message || "サーバーエラー");
-          return data;
         } catch (e) {
-          if (attempt < MAX_ATTEMPTS) continue;         // 例外もリトライ
+          if (attempt < MAX_ATTEMPTS) continue;
           throw e;
         }
       }
@@ -987,14 +1013,7 @@
       let errorCount = 0;
 
       for (let i = 0; i < total; i++) {
-        // 2件目以降は2秒待機（サーバーに呼吸時間を与えてタイムアウト抑制）
-        if (i > 0) {
-          prog.textContent = `待機中... (${i}/${total} 完了) 次の判定まで2秒`;
-          await sleep(2000);
-        }
-
         const rowLabel = `判定中 ${i+1} / ${total}`;
-        prog.textContent = rowLabel + " ...";
         const r = excelRows[i];
 
         try {
