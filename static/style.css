@@ -907,11 +907,29 @@ select option { background: var(--surface2); }
 .doc-link {
   color: var(--accent);
   text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   font-size: 12px;
   white-space: nowrap;
   font-weight: 600;
 }
 .doc-link:hover { text-decoration: underline; }
+.doc-link-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  opacity: 0.75;
+  letter-spacing: 0.5px;
+}
+.doc-link-url {
+  font-size: 11px;
+  font-family: "Courier New", "Consolas", monospace;
+  color: var(--accent);
+  word-break: break-all;
+  line-height: 1.4;
+}
+.doc-link:hover .doc-link-url { text-decoration: underline; }
 .doc-status { font-size: 12px; white-space: nowrap; min-width: 120px; }
 .doc-lm {
   display: block;
