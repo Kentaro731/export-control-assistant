@@ -180,6 +180,12 @@ select option { background: var(--surface2); }
   border-radius: var(--radius);
   padding: 24px;
   min-height: 400px;
+  /* 左パネルが長くなっても常に画面内に留まるようにスティッキー固定 */
+  position: sticky;
+  top: 100px;            /* ヘッダー＋タブナビ分を避ける */
+  align-self: start;     /* grid内でsticky有効化に必須 */
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
 }
 
 .result-placeholder {
