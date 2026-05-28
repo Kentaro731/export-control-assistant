@@ -5,7 +5,7 @@ services:
     plan: free
     region: singapore
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 180 --workers 1 --threads 4
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 300 --workers 1 --threads 4 --preload --max-requests 100 --max-requests-jitter 20
     envVars:
       # Render ダッシュボードの Environment で値を設定すること（ここには値を書かない）
       - key: ANTHROPIC_API_KEY

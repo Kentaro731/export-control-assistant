@@ -940,9 +940,42 @@
       status.textContent = "✅ 選択行をフォームに反映しました。内容を確認のうえ「AI 暫定スクリーニングを実行」を押してください。";
     }
 
+    // ===== ユーティリティ =====
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    // 1件判定（失敗時に1回だけ自動リトライ）
+    async function judgeOneWithRetry(payload, rowLabel, prog) {
+      const MAX_ATTEMPTS = 2;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+          if (attempt > 1) {
+            prog.textContent = `${rowLabel} — サーバーエラーのため5秒後にリトライ中（${attempt}/${MAX_ATTEMPTS}）...`;
+            await sleep(5000);
+          }
+          const res = await fetch("/api/judge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const text = await res.text();
+          let data;
+          try { data = JSON.parse(text); }
+          catch (_) {
+            if (attempt < MAX_ATTEMPTS) continue;       // リトライへ
+            throw new Error(`サーバーエラー（HTTP ${res.status}）`);
+          }
+          if (data.status === "error") throw new Error(data.message || "サーバーエラー");
+          return data;
+        } catch (e) {
+          if (attempt < MAX_ATTEMPTS) continue;         // 例外もリトライ
+          throw e;
+        }
+      }
+    }
+
     async function batchJudgeAll() {
       if (!excelRows.length) { alert("読込み済みのデータがありません。"); return; }
-      if (!confirm(`${excelRows.length}件を順次判定します。よろしいですか？（数分かかります）`)) return;
+      if (!confirm(`${excelRows.length}件を順次判定します。よろしいですか？（1件あたり約30秒、合計${Math.ceil(excelRows.length * 0.6)}分程度）`)) return;
       const prog = document.getElementById("batch-progress");
       const out = document.getElementById("batch-results");
       prog.classList.remove("hidden");
@@ -950,30 +983,29 @@
       out.innerHTML = '<h3>一括判定結果（AI暫定スクリーニング・要担当者承認）</h3><table class="batch-table"><thead><tr><th>#</th><th>顧客</th><th>材質</th><th>仕向地</th><th>AI目安</th><th>STEP1</th><th>確信度</th><th>承認</th></tr></thead><tbody id="batch-tbody"></tbody></table>';
       const tbody = document.getElementById("batch-tbody");
       const total = excelRows.length;
+      let successCount = 0;
+      let errorCount = 0;
+
       for (let i = 0; i < total; i++) {
-        prog.textContent = `判定中 ${i+1} / ${total} ...`;
+        // 2件目以降は2秒待機（サーバーに呼吸時間を与えてタイムアウト抑制）
+        if (i > 0) {
+          prog.textContent = `待機中... (${i}/${total} 完了) 次の判定まで2秒`;
+          await sleep(2000);
+        }
+
+        const rowLabel = `判定中 ${i+1} / ${total}`;
+        prog.textContent = rowLabel + " ...";
         const r = excelRows[i];
+
         try {
-          const res = await fetch("/api/judge", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(r),
-          });
-          const text = await res.text();
-          let data;
-          try { data = JSON.parse(text); }
-          catch (_) {
-            throw new Error(`サーバー応答が不正（HTTP ${res.status}）。AIの応答待ちでタイムアウトした可能性があります。1〜2分待ってから再試行してください。`);
-          }
-          if (data.status === "error") {
-            throw new Error(data.message || "サーバーエラー");
-          }
+          const data = await judgeOneWithRetry(r, rowLabel, prog);
+          prog.textContent = `判定中 ${i+1} / ${total} ... 完了`;
           const result = data.result || {};
           const step1 = (result.steps || []).find(s => s.step === 1) || {};
           const cls = result.overall === "OK" ? "badge-ok" :
                       result.overall === "要確認" ? "badge-warn" : "badge-ng";
           const labelMap = {"OK":"リスク低", "要確認":"要確認", "要許可":"要許可"};
-          const entryId = data.entry_id || "";
+          successCount++;
           tbody.innerHTML += `<tr>
             <td>${i+1}</td>
             <td>${escapeHtml(r.customer || "—")}</td>
@@ -985,10 +1017,15 @@
             <td><span class="hist-badge badge-warn">未確定</span></td>
           </tr>`;
         } catch (e) {
-          tbody.innerHTML += `<tr><td>${i+1}</td><td colspan="7" class="empty-row">エラー：${escapeHtml(e.message)}</td></tr>`;
+          errorCount++;
+          tbody.innerHTML += `<tr><td>${i+1}</td><td colspan="7" class="empty-row">⚠️ ${escapeHtml(e.message)}</td></tr>`;
         }
       }
-      prog.textContent = `完了：${total}件 判定済み。各案件の最終判断は履歴から個別承認してください（履歴下部）。`;
+
+      prog.textContent = `完了：${total}件中 ${successCount}件 成功 / ${errorCount}件 エラー。最終判断は履歴から個別承認してください（画面下部）。`;
+      prog.style.background = errorCount > 0 ? "" : "var(--ok-bg)";
+      prog.style.borderColor = errorCount > 0 ? "" : "var(--ok)";
+      prog.style.color       = errorCount > 0 ? "" : "var(--ok)";
       loadHistory();
     }
 
