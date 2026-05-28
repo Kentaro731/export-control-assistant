@@ -320,6 +320,52 @@ def get_history():
     return jsonify(load_history())
 
 
+@app.route("/api/customers", methods=["GET"])
+def get_customers():
+    """判定履歴から顧客マスター（顧客別集計）を返す。
+    顧客名でグループ化し、件数・リスク内訳・最新判定を集計。
+    """
+    history = load_history()
+    customer_map: dict = {}
+    for h in history:
+        name = (h.get("customer") or "").strip() or "（顧客名なし）"
+        if name not in customer_map:
+            customer_map[name] = {
+                "customer": name,
+                "count": 0,
+                "ok_count": 0,
+                "warn_count": 0,
+                "ng_count": 0,
+                "approved_count": 0,
+                "last_date": "",
+                "last_overall": "",
+                "last_destination": "",
+                "last_material": "",
+                "last_status": "",
+            }
+        rec = customer_map[name]
+        rec["count"] += 1
+        overall = h.get("overall", "")
+        if overall == "OK":
+            rec["ok_count"] += 1
+        elif overall == "要確認":
+            rec["warn_count"] += 1
+        elif overall == "要許可":
+            rec["ng_count"] += 1
+        ts = h.get("timestamp", "")
+        if ts > rec["last_date"]:
+            rec["last_date"] = ts
+            rec["last_overall"] = overall
+            rec["last_destination"] = h.get("destination", "")
+            rec["last_material"] = h.get("material", "")
+            rec["last_status"] = h.get("status", "未確定")
+        if h.get("status") == "承認済み":
+            rec["approved_count"] += 1
+    # 最終判定日の新しい順に並べ替え
+    customers = sorted(customer_map.values(), key=lambda x: x["last_date"], reverse=True)
+    return jsonify(customers)
+
+
 @app.route("/api/history/<entry_id>", methods=["DELETE"])
 def delete_history(entry_id):
     history = load_history()

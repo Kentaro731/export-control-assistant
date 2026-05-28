@@ -17,8 +17,9 @@
 
   <nav class="tab-nav-wrapper">
     <div class="tab-nav">
-      <button id="tab-btn-judge" class="tab-btn active" onclick="switchTab('judge')">⚖️ 判定ツール</button>
-      <button id="tab-btn-flow"  class="tab-btn"        onclick="switchTab('flow')">📊 判定フロー（仕組み）</button>
+      <button id="tab-btn-judge"    class="tab-btn active" onclick="switchTab('judge')">⚖️ 判定ツール</button>
+      <button id="tab-btn-customers" class="tab-btn"       onclick="switchTab('customers')">👥 顧客マスター</button>
+      <button id="tab-btn-flow"     class="tab-btn"        onclick="switchTab('flow')">📊 判定フロー（仕組み）</button>
     </div>
   </nav>
 
@@ -237,6 +238,74 @@
     </div>
   </section>
   </div><!-- /#pane-judge -->
+
+  <!-- ===== 顧客マスター タブ ===== -->
+  <div id="pane-customers" class="tab-pane hidden">
+    <div class="cust-master-page">
+
+      <div class="cust-master-header">
+        <div>
+          <h2 class="cust-master-title">👥 顧客マスター</h2>
+          <p class="cust-master-desc">判定履歴から自動集計した顧客一覧です。顧客名をクリックすると該当の判定履歴を絞り込み表示します。</p>
+        </div>
+        <div class="cust-master-actions">
+          <input type="text" id="cust-search" class="cust-search-input" placeholder="🔍 顧客名で絞り込み" oninput="filterCustomers()">
+          <button class="btn-refresh" onclick="loadCustomers()">更新</button>
+        </div>
+      </div>
+
+      <!-- サマリーカード -->
+      <div id="cust-summary-cards" class="cust-summary-cards"></div>
+
+      <!-- 顧客一覧テーブル -->
+      <div class="cust-table-wrapper">
+        <table class="cust-table">
+          <thead>
+            <tr>
+              <th class="col-name">顧客名</th>
+              <th class="col-count">判定件数</th>
+              <th class="col-risk">リスク内訳<span class="th-hint">（OK / 要確認 / 要許可）</span></th>
+              <th class="col-approved">承認済</th>
+              <th class="col-dest">最新仕向け国</th>
+              <th class="col-material">最新材質</th>
+              <th class="col-date">最終判定日</th>
+              <th class="col-status">最新ステータス</th>
+            </tr>
+          </thead>
+          <tbody id="cust-tbody">
+            <tr><td colspan="8" class="empty-row">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 選択顧客の判定履歴サブセクション -->
+      <div id="cust-history-section" class="cust-history-section hidden">
+        <div class="cust-history-header">
+          <h3 id="cust-history-title">— の判定履歴</h3>
+          <button class="btn-ghost btn-sm" onclick="clearCustomerFilter()">✕ 絞り込み解除</button>
+        </div>
+        <div class="table-wrapper">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>日時</th>
+                <th>材質</th>
+                <th>仕向け国</th>
+                <th>用途（概要）</th>
+                <th>AI目安</th>
+                <th>状態 / 最終判断</th>
+                <th>推奨アクション</th>
+                <th>判定書</th>
+              </tr>
+            </thead>
+            <tbody id="cust-history-tbody">
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
 
   <!-- ===== 判定フロー（仕組み）タブ ===== -->
   <div id="pane-flow" class="tab-pane hidden">
@@ -1263,12 +1332,139 @@
       }, 5000);
     }
 
+    // ===== 顧客マスター =====
+    let _allCustomers = [];
+
+    async function loadCustomers() {
+      try {
+        const res = await fetch("/api/customers");
+        _allCustomers = await res.json();
+        renderCustomers(_allCustomers);
+        renderCustomerSummary(_allCustomers);
+      } catch (e) {
+        document.getElementById("cust-tbody").innerHTML =
+          '<tr><td colspan="8" class="empty-row">読み込みエラー: ' + escapeHtml(e.message) + '</td></tr>';
+      }
+    }
+
+    function renderCustomerSummary(customers) {
+      const total   = customers.reduce((s, c) => s + c.count, 0);
+      const ok      = customers.reduce((s, c) => s + c.ok_count, 0);
+      const warn    = customers.reduce((s, c) => s + c.warn_count, 0);
+      const ng      = customers.reduce((s, c) => s + c.ng_count, 0);
+      const approved= customers.reduce((s, c) => s + c.approved_count, 0);
+      document.getElementById("cust-summary-cards").innerHTML = `
+        <div class="cust-card"><span class="cust-card-num">${customers.length}</span><span class="cust-card-label">顧客数</span></div>
+        <div class="cust-card"><span class="cust-card-num">${total}</span><span class="cust-card-label">総判定件数</span></div>
+        <div class="cust-card cust-card-ok"><span class="cust-card-num">${ok}</span><span class="cust-card-label">リスク低（OK）</span></div>
+        <div class="cust-card cust-card-warn"><span class="cust-card-num">${warn}</span><span class="cust-card-label">要確認</span></div>
+        <div class="cust-card cust-card-ng"><span class="cust-card-num">${ng}</span><span class="cust-card-label">要許可</span></div>
+        <div class="cust-card cust-card-approved"><span class="cust-card-num">${approved}</span><span class="cust-card-label">承認済み件数</span></div>
+      `;
+    }
+
+    function renderCustomers(customers) {
+      const tbody = document.getElementById("cust-tbody");
+      if (!customers.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-row">顧客データがありません（判定を実行すると自動登録されます）</td></tr>';
+        return;
+      }
+      tbody.innerHTML = customers.map(c => {
+        const riskBar = `
+          <span class="risk-chip risk-ok" title="リスク低">${c.ok_count}</span>
+          <span class="risk-chip risk-warn" title="要確認">${c.warn_count}</span>
+          <span class="risk-chip risk-ng" title="要許可">${c.ng_count}</span>`;
+        const lastBadge = c.last_overall === "OK"
+          ? '<span class="hist-badge badge-ok">リスク低</span>'
+          : c.last_overall === "要確認"
+          ? '<span class="hist-badge badge-warn">要確認</span>'
+          : c.last_overall === "要許可"
+          ? '<span class="hist-badge badge-ng">要許可</span>'
+          : '—';
+        const statusBadge = c.last_status === "承認済み"
+          ? '<span class="hist-badge badge-ok">承認済</span>'
+          : '<span class="hist-badge badge-warn">未確定</span>';
+        return `<tr class="cust-row" onclick="showCustomerHistory('${escapeHtml(c.customer)}')">
+          <td class="col-name cust-name-cell"><span class="cust-name-link">${escapeHtml(c.customer)}</span></td>
+          <td class="col-count cust-count-cell"><b>${c.count}</b> 件</td>
+          <td class="col-risk">${riskBar}</td>
+          <td class="col-approved">${c.approved_count > 0 ? '<span class="hist-badge badge-ok">' + c.approved_count + '件</span>' : '<span style="color:var(--text-muted)">—</span>'}</td>
+          <td class="col-dest">${escapeHtml(c.last_destination || '—')}</td>
+          <td class="col-material">${escapeHtml((c.last_material || '—').slice(0,20))}</td>
+          <td class="col-date">${escapeHtml(c.last_date || '—')}</td>
+          <td class="col-status">${statusBadge}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    function filterCustomers() {
+      const q = (document.getElementById("cust-search").value || "").toLowerCase();
+      if (!q) { renderCustomers(_allCustomers); return; }
+      renderCustomers(_allCustomers.filter(c => c.customer.toLowerCase().includes(q)));
+    }
+
+    async function showCustomerHistory(customerName) {
+      const section = document.getElementById("cust-history-section");
+      const title   = document.getElementById("cust-history-title");
+      const tbody   = document.getElementById("cust-history-tbody");
+      title.textContent = `「${customerName}」の判定履歴`;
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-row">読み込み中...</td></tr>';
+      section.classList.remove("hidden");
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+      try {
+        const res = await fetch("/api/history");
+        const history = await res.json();
+        const filtered = history.filter(h =>
+          ((h.customer || "（顧客名なし）") === customerName));
+        if (!filtered.length) {
+          tbody.innerHTML = '<tr><td colspan="8" class="empty-row">該当履歴なし</td></tr>';
+          return;
+        }
+        tbody.innerHTML = filtered.map(h => {
+          const badge = h.overall === "OK"
+            ? '<span class="hist-badge badge-ok">リスク低</span>'
+            : h.overall === "要確認"
+            ? '<span class="hist-badge badge-warn">要確認</span>'
+            : '<span class="hist-badge badge-ng">要許可</span>';
+          const purpose = (h.purpose || "").length > 30
+            ? h.purpose.slice(0, 30) + "…"
+            : (h.purpose || "—");
+          const rec = (h.recommendation || "").length > 50
+            ? h.recommendation.slice(0, 50) + "…"
+            : (h.recommendation || "—");
+          const statusCell = h.status === "承認済み"
+            ? `<span class="hist-badge badge-ok">承認済</span><br><span class="hist-final">${escapeHtml(h.final_decision || "")}<br>（${escapeHtml(h.approver || "")}）</span>`
+            : '<span class="hist-badge badge-warn">未確定</span>';
+          const docLabel = h.status === "承認済み" ? "📄 正式版" : "📄 暫定版";
+          return `<tr>
+            <td>${escapeHtml(h.timestamp || "")}</td>
+            <td>${escapeHtml(h.material || "—")}</td>
+            <td>${escapeHtml(h.destination || "—")}</td>
+            <td>${escapeHtml(purpose)}</td>
+            <td>${badge}</td>
+            <td>${statusCell}</td>
+            <td class="rec-cell">${escapeHtml(rec)}</td>
+            <td><button class="btn-doc-sm" onclick="openJudgmentDoc('${escapeHtml(h.id || '')}')">${docLabel}</button></td>
+          </tr>`;
+        }).join("");
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-row">読み込みエラー</td></tr>';
+      }
+    }
+
+    function clearCustomerFilter() {
+      document.getElementById("cust-history-section").classList.add("hidden");
+    }
+
     // ===== タブ切り替え =====
     function switchTab(tab) {
-      document.getElementById('pane-judge').classList.toggle('hidden', tab !== 'judge');
-      document.getElementById('pane-flow').classList.toggle('hidden',  tab !== 'flow');
-      document.getElementById('tab-btn-judge').classList.toggle('active', tab === 'judge');
-      document.getElementById('tab-btn-flow').classList.toggle('active',  tab === 'flow');
+      document.getElementById('pane-judge').classList.toggle('hidden',     tab !== 'judge');
+      document.getElementById('pane-customers').classList.toggle('hidden', tab !== 'customers');
+      document.getElementById('pane-flow').classList.toggle('hidden',      tab !== 'flow');
+      document.getElementById('tab-btn-judge').classList.toggle('active',     tab === 'judge');
+      document.getElementById('tab-btn-customers').classList.toggle('active', tab === 'customers');
+      document.getElementById('tab-btn-flow').classList.toggle('active',      tab === 'flow');
+      if (tab === 'customers') loadCustomers();
     }
   </script>
 
