@@ -15,6 +15,14 @@
     </div>
   </header>
 
+  <nav class="tab-nav-wrapper">
+    <div class="tab-nav">
+      <button id="tab-btn-judge" class="tab-btn active" onclick="switchTab('judge')">⚖️ 判定ツール</button>
+      <button id="tab-btn-flow"  class="tab-btn"        onclick="switchTab('flow')">📊 判定フロー（仕組み）</button>
+    </div>
+  </nav>
+
+  <div id="pane-judge" class="tab-pane">
   <main class="main">
     <!-- 左：入力フォーム -->
     <section class="form-panel">
@@ -210,6 +218,334 @@
       </table>
     </div>
   </section>
+  </div><!-- /#pane-judge -->
+
+  <!-- ===== 判定フロー（仕組み）タブ ===== -->
+  <div id="pane-flow" class="tab-pane hidden">
+    <div class="flow-page">
+
+      <!-- イントロ -->
+      <div class="flow-intro">
+        <h2>📊 このツールの判定フロー</h2>
+        <p>本ツールは、日本の<b>外為法（外国為替及び外国貿易法）および輸出貿易管理令</b>に基づく輸出規制の
+        <b>一次スクリーニング（補助ツール）</b>です。AIが法的フレームワークに沿って5ステップで分析し、
+        担当者が最終判断・承認を記録する2段階構造になっています。<br>
+        <b>AIの出力は断定ではありません。最終的な該非判定は、輸出管理担当者が公式の項目別対比表で確定してください。</b></p>
+        <div class="intro-tags">
+          <span class="intro-tag">外為法・輸出貿易管理令</span>
+          <span class="intro-tag">5ステップ判定</span>
+          <span class="intro-tag">AI暫定スクリーニング</span>
+          <span class="intro-tag">担当者承認ワークフロー</span>
+          <span class="intro-tag">軍事用途ガードレール</span>
+        </div>
+      </div>
+
+      <!-- Section 1: 入力情報 -->
+      <div class="flow-section">
+        <div class="flow-section-title">1 — 入力情報：何を読み取るか</div>
+        <div class="input-cards">
+          <div class="input-card">
+            <span class="ic-badge ic-optional">任意</span>
+            <div class="ic-title">顧客名</div>
+            <div class="ic-desc">取引先・エンドユーザー名。需要者チェック（STEP4）の参考情報として使用。</div>
+          </div>
+          <div class="input-card">
+            <span class="ic-badge ic-required">必須</span>
+            <div class="ic-title">材質</div>
+            <div class="ic-desc">金属種・合金グレード（例：アルミ A6061、チタン Ti-6Al-4V）。リスト規制（STEP1）判定の主要根拠。</div>
+          </div>
+          <div class="input-card">
+            <span class="ic-badge ic-optional">任意</span>
+            <div class="ic-title">寸法</div>
+            <div class="ic-desc">mm単位のサイズ・板厚など。特定スペックが規制閾値に関わる場合に重要。</div>
+          </div>
+          <div class="input-card">
+            <span class="ic-badge ic-recommend">推奨</span>
+            <div class="ic-title">用途（最終用途）</div>
+            <div class="ic-desc">加工後の使い道・最終製品名。キャッチオール規制（STEP2）・需要者チェック（STEP4）の重要判断材料。</div>
+          </div>
+          <div class="input-card">
+            <span class="ic-badge ic-recommend">推奨</span>
+            <div class="ic-title">商流</div>
+            <div class="ic-desc">自社→商社→最終需要者の流通経路。迂回輸出リスクの検出に使用。</div>
+          </div>
+          <div class="input-card">
+            <span class="ic-badge ic-required">必須</span>
+            <div class="ic-title">仕向け国</div>
+            <div class="ic-desc">最終届け先の国。ホワイト国・指定国の判定に直結。入力時にリアルタイムでバッジ表示。</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 2: 判定フロー -->
+      <div class="flow-section">
+        <div class="flow-section-title">2 — 判定フロー：どのように判断するか</div>
+        <div class="flow-chart">
+
+          <!-- Pre-check -->
+          <div class="flow-block block-pre">
+            <div class="flow-block-header">
+              <span class="flow-block-icon">🔍</span>
+              <div style="flex:1">
+                <div class="flow-block-title">事前チェック（ルールベース・即時）</div>
+                <div class="flow-block-sub">AI呼び出し前にシステムが辞書・キーワードで自動実行</div>
+              </div>
+              <span class="flow-block-tag tag-rule">ルール判定</span>
+            </div>
+            <div class="flow-block-body">
+              <div class="flow-block-desc">
+                ① <b>仕向け国の分類</b>：別表第3（ホワイト国・42カ国）・別表第3の2（指定国）に照合し、画面上にバッジをリアルタイム表示。<br>
+                ② <b>HSコードヒント生成</b>：材質名から参考HSコード（76系・74系等）を辞書引きで提示。<br>
+                ③ <b>軍事用途キーワード検出</b>：「兵器」「弾薬」「軍用航空機」「戦闘車両」等のキーワードを用途・商流から検出。<br>
+                ④ <b>安全ガードレール</b>：AIが「リスク低」と判定しても、軍事キーワードが検出された場合は自動的に「要確認」に引き上げ。
+              </div>
+              <div class="flow-outcomes">
+                <div class="outcome oc-ok">✅ ホワイト国</div>
+                <div class="outcome oc-warn">🟡 非ホワイト国</div>
+                <div class="outcome oc-ng">🔴 指定国/禁止国</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flow-connector">↓</div>
+
+          <!-- STEP1 -->
+          <div class="flow-block block-ai">
+            <div class="flow-block-header">
+              <span class="flow-block-icon">🤖</span>
+              <div style="flex:1">
+                <div class="flow-block-title">STEP 1：リスト規制チェック</div>
+                <div class="flow-block-sub">輸出貿易管理令 別表第1（1〜15項）</div>
+              </div>
+              <span class="flow-block-tag tag-ai">AI判定</span>
+            </div>
+            <div class="flow-block-body">
+              <div class="flow-block-desc">
+                輸出令別表第1（1項：武器 ～ 15項：その他）の規制品目リストに対して、入力された材質・寸法・用途をAIが照合。
+                アルミ高力合金（2000・7000番台）、チタン合金、ニッケル合金など特定スペックは規制対象になる可能性があります。<br>
+                <b>「要確認」または「該当」の場合は、担当者が必ず公式の項目別対比表で製品仕様を突合してください。</b>
+              </div>
+              <div class="flow-outcomes">
+                <div class="outcome oc-ok">非該当 → 次へ</div>
+                <div class="outcome oc-warn">要確認 → 対比表必須</div>
+                <div class="outcome oc-ng">該当 → 要許可申請</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flow-connector">↓</div>
+
+          <!-- STEP2 -->
+          <div class="flow-block block-ai">
+            <div class="flow-block-header">
+              <span class="flow-block-icon">🤖</span>
+              <div style="flex:1">
+                <div class="flow-block-title">STEP 2：キャッチオール規制（用途規制）</div>
+                <div class="flow-block-sub">大量破壊兵器等・通常兵器の用途チェック</div>
+              </div>
+              <span class="flow-block-tag tag-ai">AI判定</span>
+            </div>
+            <div class="flow-block-body">
+              <div class="flow-block-desc">
+                リスト規制に該当しない貨物でも、WMD（大量破壊兵器・ミサイル等）や通常兵器の開発・製造・使用に用いられるおそれがある場合に規制されます。<br>
+                <b>ホワイト国（別表第3）向けは通常兵器用途規制が原則免除</b>されますが、WMD用途規制は適用されます。
+                用途・商流が判断の核心となります。
+              </div>
+              <div class="flow-outcomes">
+                <div class="outcome oc-skip">白国→通常兵器免除</div>
+                <div class="outcome oc-ok">懸念なし → 次へ</div>
+                <div class="outcome oc-warn">用途懸念 → 要確認</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flow-connector">↓</div>
+
+          <!-- STEP3 -->
+          <div class="flow-block block-ai">
+            <div class="flow-block-header">
+              <span class="flow-block-icon">🤖</span>
+              <div style="flex:1">
+                <div class="flow-block-title">STEP 3：仕向け国規制</div>
+                <div class="flow-block-sub">国連決議・別表第3の2 指定国チェック</div>
+              </div>
+              <span class="flow-block-tag tag-ai">AI判定</span>
+            </div>
+            <div class="flow-block-body">
+              <div class="flow-block-desc">
+                輸出禁止国（北朝鮮・イラン・ロシア等、国連安保理決議・外為法令）および別表第3の2指定国（懸念国）に対するチェック。
+                禁止国・指定国への輸出は原則許可取得が必要、または禁止となります。
+              </div>
+              <div class="flow-outcomes">
+                <div class="outcome oc-ok">問題なし → 次へ</div>
+                <div class="outcome oc-warn">指定国 → 要注意</div>
+                <div class="outcome oc-ng">禁止国 → 輸出不可</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flow-connector">↓</div>
+
+          <!-- STEP4 -->
+          <div class="flow-block block-ai">
+            <div class="flow-block-header">
+              <span class="flow-block-icon">🤖</span>
+              <div style="flex:1">
+                <div class="flow-block-title">STEP 4：需要者チェック</div>
+                <div class="flow-block-sub">エンドユーザー・商流の懸念判断</div>
+              </div>
+              <span class="flow-block-tag tag-ai">AI判定</span>
+            </div>
+            <div class="flow-block-body">
+              <div class="flow-block-desc">
+                顧客名・商流・用途から、WMD/通常兵器開発関与者・懸念需要者への販売リスクを評価します。
+                軍事用途キーワード（兵器・弾薬・軍用等）が検出された場合は追加の警告が出されます。
+                迂回輸出（第三国経由）の懸念がある商流も検出対象です。
+              </div>
+              <div class="flow-outcomes">
+                <div class="outcome oc-ok">問題なし → 次へ</div>
+                <div class="outcome oc-warn">懸念あり → 要確認</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flow-connector">↓</div>
+
+          <!-- STEP5 -->
+          <div class="flow-block block-ai">
+            <div class="flow-block-header">
+              <span class="flow-block-icon">🤖</span>
+              <div style="flex:1">
+                <div class="flow-block-title">STEP 5：総合スクリーニング判定</div>
+                <div class="flow-block-sub">全ステップを総合した暫定結果の出力</div>
+              </div>
+              <span class="flow-block-tag tag-ai">AI判定</span>
+            </div>
+            <div class="flow-block-body">
+              <div class="flow-block-desc">
+                STEP1〜4の結果を総合し、全体的なスクリーニング結果を出力します。
+                各STEPの<b>確信度（高/中/低）</b>・<b>AIが確認できなかった事項</b>・<b>推奨アクション</b>を合わせて表示。<br>
+                <b>出力はあくまで「暫定スクリーニング（目安）」です。「リスク低」であっても非該当を断定しません。</b>
+              </div>
+              <div class="flow-outcomes">
+                <div class="outcome oc-ok">リスク低（目安）</div>
+                <div class="outcome oc-warn">要確認（目安）</div>
+                <div class="outcome oc-ng">要許可の可能性</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flow-connector">↓</div>
+
+          <!-- Human -->
+          <div class="flow-block block-human">
+            <div class="flow-block-header">
+              <span class="flow-block-icon">👤</span>
+              <div style="flex:1">
+                <div class="flow-block-title">担当者による最終判断・承認記録</div>
+                <div class="flow-block-sub">公式の項目別対比表による確定＋記録</div>
+              </div>
+              <span class="flow-block-tag tag-human">担当者</span>
+            </div>
+            <div class="flow-block-body">
+              <div class="flow-block-desc">
+                AIの暫定スクリーニング結果を参考に、輸出管理担当者が経済産業省の公式「<b>項目別対比表</b>」で製品仕様を突合し、最終的な該非判定を確定します。
+                確認者名・最終判断・対比表チェック済みフラグを記録し、<b>審査証跡として保管</b>します。
+              </div>
+              <div class="flow-outcomes">
+                <div class="outcome oc-ok">非該当（許可不要）</div>
+                <div class="outcome oc-ng">該当・要許可申請</div>
+                <div class="outcome oc-warn">保留・上長相談</div>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /flow-chart -->
+      </div><!-- /flow-section -->
+
+      <!-- Section 3: 役割分担 -->
+      <div class="flow-section">
+        <div class="flow-section-title">3 — AI と担当者の役割分担</div>
+        <table class="role-table">
+          <thead>
+            <tr>
+              <th>項目</th>
+              <th class="th-ai">🤖 AI（本ツール）</th>
+              <th class="th-human">👤 輸出管理担当者</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>役割</td>
+              <td>暫定スクリーニング（一次確認の補助）</td>
+              <td>最終判断・確定・記録</td>
+            </tr>
+            <tr>
+              <td>法的責任</td>
+              <td>なし（補助ツール）</td>
+              <td>あり（輸出管理責任者）</td>
+            </tr>
+            <tr>
+              <td>判定根拠</td>
+              <td>学習データ＋入力情報からの推定。法令改正に未対応の可能性あり。</td>
+              <td>経産省の公式「項目別対比表」で製品仕様を直接突合。</td>
+            </tr>
+            <tr>
+              <td>確信度</td>
+              <td>各STEPに「高/中/低」で表示。低い場合は特に慎重な確認が必要。</td>
+              <td>確信度が低い項目は必ず対比表で再確認する。</td>
+            </tr>
+            <tr>
+              <td>未確認事項</td>
+              <td>「AIでは確認不可な事項」を明示（例：現物スペック、用途の真偽）。</td>
+              <td>AIが確認できなかった事項を実地で確認する。</td>
+            </tr>
+            <tr>
+              <td>出力の位置づけ</td>
+              <td>「リスク低（目安）」であっても非該当を断定しない。参考情報として提供。</td>
+              <td>「非該当（許可不要）」または「該当・要許可申請」を公式根拠に基づき確定する。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Section 4: 安全策 -->
+      <div class="flow-section">
+        <div class="flow-section-title">4 — 安全策のポイント</div>
+        <div class="safety-grid">
+          <div class="safety-card">
+            <span class="safety-icon">📊</span>
+            <div>
+              <h4>確信度の表示</h4>
+              <p>各STEPに「確信度：高/中/低」を表示。確信度が低いほどAIの根拠が薄く、担当者のより慎重な確認が必要です。</p>
+            </div>
+          </div>
+          <div class="safety-card">
+            <span class="safety-icon">⚠️</span>
+            <div>
+              <h4>未確認事項の明示</h4>
+              <p>AIでは確認できなかった事項（現物スペック・用途の真偽・商流の実態等）を「担当者が必ず確認すべき事項」として別枠で表示します。</p>
+            </div>
+          </div>
+          <div class="safety-card">
+            <span class="safety-icon">🛡️</span>
+            <div>
+              <h4>軍事用途ガードレール</h4>
+              <p>「兵器」「弾薬」「軍用航空機」等のキーワードが検出された場合、AIが「リスク低」と判定しても自動的に「要確認」に引き上げます。</p>
+            </div>
+          </div>
+          <div class="safety-card">
+            <span class="safety-icon">✅</span>
+            <div>
+              <h4>担当者承認ワークフロー</h4>
+              <p>確認者名・最終判断・対比表チェック済みフラグを必ず記録。承認まで「未確定」状態が続き、審査証跡として保管されます。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /flow-page -->
+  </div><!-- /#pane-flow -->
 
   <script>
     // ホワイト国リスト（フロント側でリアルタイム表示）
@@ -595,6 +931,14 @@
     }
 
     loadHistory();
+
+    // ===== タブ切り替え =====
+    function switchTab(tab) {
+      document.getElementById('pane-judge').classList.toggle('hidden', tab !== 'judge');
+      document.getElementById('pane-flow').classList.toggle('hidden',  tab !== 'flow');
+      document.getElementById('tab-btn-judge').classList.toggle('active', tab === 'judge');
+      document.getElementById('tab-btn-flow').classList.toggle('active',  tab === 'flow');
+    }
   </script>
 </body>
 </html>

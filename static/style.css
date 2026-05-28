@@ -536,3 +536,261 @@ select option { background: var(--surface2); }
 @media (max-width: 900px) {
   .main { grid-template-columns: 1fr; }
 }
+
+/* ===== タブナビゲーション ===== */
+.tab-nav-wrapper {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+}
+.tab-nav {
+  display: flex;
+  max-width: 1400px;
+  margin: 0 auto;
+  gap: 0;
+}
+.tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: var(--text-muted);
+  padding: 12px 22px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  font-family: inherit;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ===== 判定フローページ ===== */
+.flow-page {
+  max-width: 860px;
+  margin: 28px auto 60px;
+  padding: 0 20px;
+}
+.flow-intro {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  margin-bottom: 32px;
+}
+.flow-intro h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+.flow-intro p {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.8;
+}
+.intro-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.intro-tag {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--surface2);
+}
+
+.flow-section { margin-bottom: 36px; }
+.flow-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 16px;
+  padding-left: 12px;
+  border-left: 3px solid var(--accent);
+}
+
+/* 入力カード */
+.input-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.input-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.ic-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 3px;
+  margin-bottom: 6px;
+}
+.ic-required { background: var(--ng-bg); color: var(--ng); border: 1px solid var(--ng); }
+.ic-optional { background: var(--surface2); color: var(--text-muted); border: 1px solid var(--border); }
+.ic-recommend { background: #1a2a0d; color: #7fc86e; border: 1px solid #7fc86e; }
+.input-card .ic-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.input-card .ic-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* フローチャート */
+.flow-chart { display: flex; flex-direction: column; gap: 0; }
+.flow-connector {
+  display: flex;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 18px;
+  padding: 3px 0;
+  line-height: 1;
+}
+.flow-block {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.flow-block.block-pre   { border-left: 3px solid var(--accent); }
+.flow-block.block-ai    { border-left: 3px solid #a78bfa; }
+.flow-block.block-human { border-left: 3px solid var(--ok); }
+
+.flow-block-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  background: var(--surface2);
+}
+.flow-block-icon { font-size: 18px; flex-shrink: 0; }
+.flow-block-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  flex: 1;
+}
+.flow-block-sub { font-size: 11px; color: var(--text-muted); }
+.flow-block-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.tag-rule  { background: #0f2a3a; color: var(--accent); border: 1px solid var(--accent); }
+.tag-ai    { background: #1e1040; color: #a78bfa;      border: 1px solid #a78bfa; }
+.tag-human { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok); }
+
+.flow-block-body {
+  padding: 12px 16px;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.flow-block-desc {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.75;
+}
+.flow-outcomes {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex-shrink: 0;
+  min-width: 148px;
+}
+.outcome {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 4px;
+  text-align: center;
+  white-space: nowrap;
+}
+.oc-ok   { background: var(--ok-bg);   color: var(--ok);   border: 1px solid var(--ok); }
+.oc-warn { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn); }
+.oc-ng   { background: var(--ng-bg);   color: var(--ng);   border: 1px solid var(--ng); }
+.oc-skip { background: var(--surface2); color: var(--text-muted); border: 1px solid var(--border); }
+
+/* 役割分担テーブル */
+.role-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.role-table th {
+  background: var(--surface2);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 11px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.role-table th.th-ai    { color: #a78bfa; }
+.role-table th.th-human { color: var(--ok); }
+.role-table td {
+  padding: 10px 16px;
+  font-size: 13px;
+  line-height: 1.65;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.role-table tr:last-child td { border-bottom: none; }
+.role-table td:first-child {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 12px;
+  white-space: nowrap;
+  width: 18%;
+}
+
+/* 安全策カード */
+.safety-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.safety-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.safety-icon { font-size: 22px; flex-shrink: 0; line-height: 1.3; }
+.safety-card h4 { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 5px; }
+.safety-card p  { font-size: 12px; color: var(--text-muted); line-height: 1.65; }
+
+@media (max-width: 700px) {
+  .input-cards  { grid-template-columns: repeat(2, 1fr); }
+  .safety-grid  { grid-template-columns: 1fr; }
+  .flow-block-body { flex-direction: column; }
+  .flow-outcomes { min-width: unset; width: 100%; }
+}
+@media (max-width: 480px) {
+  .input-cards { grid-template-columns: 1fr; }
+}
