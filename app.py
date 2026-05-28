@@ -139,7 +139,7 @@ def save_history(entry):
     with _history_lock:
         history = load_history()
         history.insert(0, entry)
-        history = history[:100]  # 最新100件のみ保持
+        history = history[:300]  # 最新300件保持
         with open(HISTORY_FILE, "w", encoding="utf-8") as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
 
@@ -251,7 +251,13 @@ JSON形式のみで回答してください。"""
             save_history(entry)
 
             with _jobs_lock:
-                _jobs[job_id] = {"status": "ok", "result": result, "entry_id": entry["id"]}
+                _jobs[job_id] = {
+                    "status": "ok",
+                    "result": result,
+                    "entry_id": entry["id"],
+                    # フロントエンドの localStorage バックアップ用
+                    "entry_snapshot": {k: v for k, v in entry.items()},
+                }
 
         except json.JSONDecodeError:
             fallback = {
@@ -364,6 +370,30 @@ def get_customers():
     # 最終判定日の新しい順に並べ替え
     customers = sorted(customer_map.values(), key=lambda x: x["last_date"], reverse=True)
     return jsonify(customers)
+
+
+@app.route("/api/history/restore", methods=["POST"])
+def restore_history():
+    """ブラウザのlocalStorageバックアップからサーバー履歴を復元する。
+    サーバー再起動後にフロントエンドが自動で呼び出す。
+    既存エントリ（同一id）は上書きせず、新規のみ追加。
+    """
+    entries = request.json or []
+    if not isinstance(entries, list):
+        return jsonify({"status": "error", "message": "リスト形式で送信してください"}), 400
+    with _history_lock:
+        server = load_history()
+        server_ids = {h.get("id") for h in server}
+        new_ones = [
+            e for e in entries
+            if isinstance(e, dict) and e.get("id") and e["id"] not in server_ids
+        ]
+        merged = server + new_ones
+        merged.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        merged = merged[:300]
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(merged, f, ensure_ascii=False, indent=2)
+    return jsonify({"status": "ok", "restored": len(new_ones), "total": len(merged)})
 
 
 @app.route("/api/history/<entry_id>", methods=["DELETE"])
