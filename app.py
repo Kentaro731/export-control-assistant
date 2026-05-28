@@ -452,6 +452,98 @@ def excel_parse():
     })
 
 
+# =====================================================================
+# 参照資料の最新確認（判定フロー内で言及している公式ページ）
+# =====================================================================
+import urllib.request as _urllib_req
+import urllib.error as _urllib_err
+
+DOC_REFS = [
+    {
+        "id": "matrix",
+        "name": "項目別対比表",
+        "url": "https://www.meti.go.jp/policy/anpo/matrix_index.html",
+        "desc": "リスト規制（STEP1）判定の基準。製品仕様を突合する公式資料",
+    },
+    {
+        "id": "anpo_top",
+        "name": "安全保障輸出管理（経産省トップ）",
+        "url": "https://www.meti.go.jp/policy/anpo/index.html",
+        "desc": "法令・規制・通知の最新情報。まず確認するページ",
+    },
+    {
+        "id": "whitelist",
+        "name": "ホワイト国（別表第3）一覧",
+        "url": "https://www.meti.go.jp/policy/anpo/law01.html",
+        "desc": "キャッチオール通常兵器免除対象の42カ国リスト（STEP3）",
+    },
+    {
+        "id": "catchall",
+        "name": "キャッチオール規制",
+        "url": "https://www.meti.go.jp/policy/anpo/catch_all.html",
+        "desc": "大量破壊兵器・通常兵器の用途規制（STEP2）の詳細基準",
+    },
+    {
+        "id": "egov_law",
+        "name": "輸出貿易管理令（e-Gov法令）",
+        "url": "https://elaws.e-gov.go.jp/document?lawid=374CO0000000378",
+        "desc": "別表第1〜3の法令原文（最新の改正内容を確認）",
+    },
+]
+
+
+def _check_one_doc(doc):
+    """1件の参照資料にアクセスし、到達可否と最終更新日を取得する"""
+    result = dict(doc)
+    try:
+        req = _urllib_req.Request(
+            doc["url"],
+            headers={"User-Agent": "Mozilla/5.0 (compatible; ExportCheckTool/1.0)"},
+        )
+        resp = _urllib_req.urlopen(req, timeout=12)
+        result["http_status"] = resp.status
+        result["last_modified"] = resp.headers.get("Last-Modified") or "—"
+        result["reachable"] = True
+        result["error"] = None
+    except _urllib_err.HTTPError as e:
+        result["http_status"] = e.code
+        result["last_modified"] = "—"
+        result["reachable"] = False
+        result["error"] = f"HTTP {e.code}"
+    except Exception as e:
+        result["http_status"] = "—"
+        result["last_modified"] = "—"
+        result["reachable"] = False
+        result["error"] = str(e)[:60]
+    return result
+
+
+@app.route("/api/check_docs")
+def check_docs():
+    """参照資料（経産省・e-Gov）のアクセス確認エンドポイント（5件を並列取得）"""
+    from concurrent.futures import ThreadPoolExecutor
+    import datetime as _dt
+
+    jst = _dt.timezone(_dt.timedelta(hours=9))
+    checked_at = _dt.datetime.now(jst).strftime("%Y-%m-%d %H:%M JST")
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = {pool.submit(_check_one_doc, doc): doc for doc in DOC_REFS}
+        results_map = {}
+        for fut in futures:
+            doc = futures[fut]
+            try:
+                r = fut.result(timeout=15)
+            except Exception as e:
+                r = dict(doc, http_status="—", last_modified="—",
+                         reachable=False, error=str(e)[:60])
+            r["checked_at"] = checked_at
+            results_map[doc["id"]] = r
+
+    results = [results_map[d["id"]] for d in DOC_REFS if d["id"] in results_map]
+    return jsonify({"status": "ok", "results": results, "checked_at": checked_at})
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5002))
     app.run(debug=False, host="0.0.0.0", port=port)

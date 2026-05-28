@@ -240,6 +240,68 @@
         </div>
       </div>
 
+      <!-- 参照資料と最新確認 -->
+      <div class="flow-section">
+        <div class="flow-section-title">参照資料 — 確認すべき公式ページ</div>
+        <div class="doc-check-bar">
+          <p class="doc-check-note">
+            判定フロー内で言及している公式資料の一覧です。
+            「最新確認を実行」ボタンで各ページへのアクセス状況と最終更新日時を取得し、
+            資料が現在も参照可能かどうかを確認できます。
+          </p>
+          <button class="btn-check-docs" id="btn-check-docs" onclick="checkDocs()">
+            <span id="check-docs-label">🔄 最新確認を実行</span>
+            <span id="check-docs-spinner" class="check-spinner hidden"></span>
+          </button>
+        </div>
+        <table class="doc-refs-table">
+          <thead>
+            <tr>
+              <th>資料名</th>
+              <th>用途・説明</th>
+              <th>公式URL</th>
+              <th>確認状態</th>
+            </tr>
+          </thead>
+          <tbody id="doc-refs-tbody">
+            <tr data-doc-id="matrix">
+              <td class="doc-name">項目別対比表</td>
+              <td class="doc-desc">リスト規制（STEP1）判定の基準。製品仕様を突合する公式資料</td>
+              <td><a href="https://www.meti.go.jp/policy/anpo/matrix_index.html" target="_blank" rel="noopener" class="doc-link">経産省 ↗</a></td>
+              <td class="doc-status"><span class="doc-badge badge-unchecked">未確認</span></td>
+            </tr>
+            <tr data-doc-id="anpo_top">
+              <td class="doc-name">安全保障輸出管理（経産省トップ）</td>
+              <td class="doc-desc">法令・規制・通知の最新情報。まず確認するページ</td>
+              <td><a href="https://www.meti.go.jp/policy/anpo/index.html" target="_blank" rel="noopener" class="doc-link">経産省 ↗</a></td>
+              <td class="doc-status"><span class="doc-badge badge-unchecked">未確認</span></td>
+            </tr>
+            <tr data-doc-id="whitelist">
+              <td class="doc-name">ホワイト国（別表第3）一覧</td>
+              <td class="doc-desc">キャッチオール通常兵器免除対象の42カ国リスト（STEP3）</td>
+              <td><a href="https://www.meti.go.jp/policy/anpo/law01.html" target="_blank" rel="noopener" class="doc-link">経産省 ↗</a></td>
+              <td class="doc-status"><span class="doc-badge badge-unchecked">未確認</span></td>
+            </tr>
+            <tr data-doc-id="catchall">
+              <td class="doc-name">キャッチオール規制</td>
+              <td class="doc-desc">大量破壊兵器・通常兵器の用途規制（STEP2）の詳細基準</td>
+              <td><a href="https://www.meti.go.jp/policy/anpo/catch_all.html" target="_blank" rel="noopener" class="doc-link">経産省 ↗</a></td>
+              <td class="doc-status"><span class="doc-badge badge-unchecked">未確認</span></td>
+            </tr>
+            <tr data-doc-id="egov_law">
+              <td class="doc-name">輸出貿易管理令（e-Gov法令）</td>
+              <td class="doc-desc">別表第1〜3の法令原文（最新の改正内容を確認）</td>
+              <td><a href="https://elaws.e-gov.go.jp/document?lawid=374CO0000000378" target="_blank" rel="noopener" class="doc-link">e-Gov ↗</a></td>
+              <td class="doc-status"><span class="doc-badge badge-unchecked">未確認</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <p style="margin-top:8px; font-size:11px; color:var(--text-muted);">
+          ※「最新確認を実行」はサーバーから各ページへのアクセス可否と最終更新日時を確認します。
+          法令の内容変更は経産省サイトで必ず直接ご確認ください。
+        </p>
+      </div>
+
       <!-- Section 1: 入力情報 -->
       <div class="flow-section">
         <div class="flow-section-title">1 — 入力情報：何を読み取るか</div>
@@ -932,6 +994,71 @@
 
     loadHistory();
 
+    // ===== 参照資料の最新確認 =====
+    async function checkDocs() {
+      const btn     = document.getElementById('btn-check-docs');
+      const label   = document.getElementById('check-docs-label');
+      const spinner = document.getElementById('check-docs-spinner');
+      btn.disabled  = true;
+      label.textContent = '確認中...';
+      spinner.classList.remove('hidden');
+
+      // テーブルを「確認中」状態に
+      document.querySelectorAll('#doc-refs-tbody .doc-status').forEach(td => {
+        td.innerHTML = '<span class="doc-badge badge-checking">確認中…</span>';
+      });
+
+      try {
+        const res  = await fetch('/api/check_docs');
+        const data = await res.json();
+        if (data.status !== 'ok') throw new Error(data.message || 'サーバーエラー');
+
+        data.results.forEach(r => {
+          const row = document.querySelector(`#doc-refs-tbody tr[data-doc-id="${r.id}"]`);
+          if (!row) return;
+          const td = row.querySelector('.doc-status');
+          if (r.reachable) {
+            const lm = (r.last_modified && r.last_modified !== '—')
+              ? `<br><span class="doc-lm">最終更新: ${escapeHtml(r.last_modified)}</span>`
+              : '<br><span class="doc-lm">最終更新日時: 非公開</span>';
+            td.innerHTML = `<span class="doc-badge badge-doc-ok">✅ アクセスOK</span>${lm}`;
+          } else {
+            const err = r.error ? `<br><span class="doc-lm">${escapeHtml(r.error)}</span>` : '';
+            td.innerHTML = `<span class="doc-badge badge-doc-error">⚠️ アクセス不可</span>${err}`;
+          }
+        });
+
+        const okCount = data.results.filter(r => r.reachable).length;
+        showToast(
+          `✅ ${data.results.length}件の資料を確認しました（${okCount}件 アクセスOK）\n${data.checked_at}`,
+          'success'
+        );
+      } catch (e) {
+        document.querySelectorAll('#doc-refs-tbody .doc-status').forEach(td => {
+          td.innerHTML = '<span class="doc-badge badge-doc-error">エラー</span>';
+        });
+        showToast('⚠️ 確認中にエラーが発生しました: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        label.textContent = '🔄 最新確認を実行';
+        spinner.classList.add('hidden');
+      }
+    }
+
+    // ===== トースト通知 =====
+    function showToast(msg, type) {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.textContent = msg;
+      container.appendChild(toast);
+      requestAnimationFrame(() => toast.classList.add('toast-show'));
+      setTimeout(() => {
+        toast.classList.remove('toast-show');
+        setTimeout(() => toast.remove(), 400);
+      }, 5000);
+    }
+
     // ===== タブ切り替え =====
     function switchTab(tab) {
       document.getElementById('pane-judge').classList.toggle('hidden', tab !== 'judge');
@@ -940,5 +1067,8 @@
       document.getElementById('tab-btn-flow').classList.toggle('active',  tab === 'flow');
     }
   </script>
+
+  <!-- トースト通知コンテナ -->
+  <div id="toast-container" class="toast-container"></div>
 </body>
 </html>
