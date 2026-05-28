@@ -161,24 +161,20 @@
 
         <div id="steps-list" class="steps-list"></div>
 
-        <!-- AIが確認できなかった事項 -->
-        <div id="unverifiable-section" class="result-section unverifiable-section hidden">
-          <h3>⚠️ 担当者が必ず確認すべき事項（AIでは確認不可）</h3>
-          <ul id="unverifiable-list"></ul>
-        </div>
-
-        <div class="result-section">
-          <h3>推奨アクション</h3>
-          <p id="recommendation" class="recommendation-text"></p>
-        </div>
-
-        <div class="result-section hs-section">
-          <h3>参考 HSコード</h3>
-          <p id="hs-hint" class="hs-text"></p>
-        </div>
-
-        <div class="result-section caution-section">
-          <p id="caution-text"></p>
+        <!-- 次のアクション＋確認事項（1行ずつコンパクト表示） -->
+        <div class="action-row-section">
+          <div class="action-row">
+            <span class="action-label">▶ 次のアクション</span>
+            <span id="recommendation" class="action-value"></span>
+          </div>
+          <div id="unverifiable-section" class="action-row hidden">
+            <span class="action-label">⚠ 要確認事項</span>
+            <span id="unverifiable-list" class="action-chips"></span>
+          </div>
+          <div id="hs-row" class="action-row hidden">
+            <span class="action-label">📦 HSコード参考</span>
+            <span id="hs-hint" class="action-value action-hs"></span>
+          </div>
         </div>
 
         <!-- 人間の承認ワークフロー -->
@@ -854,20 +850,29 @@
         banner.classList.add("hidden");
       }
 
-      // AIが確認できなかった事項
+      // 次のアクション
+      document.getElementById("recommendation").textContent = result.recommendation || "—";
+
+      // 要確認事項（チップ表示）
       const uvSection = document.getElementById("unverifiable-section");
       const uvList = document.getElementById("unverifiable-list");
       const uv = result.unverifiable || [];
       if (uv.length) {
-        uvList.innerHTML = uv.map(x => `<li>${escapeHtml(x)}</li>`).join("");
+        uvList.innerHTML = uv.map(x => `<span class="uv-chip">${escapeHtml(x)}</span>`).join("");
         uvSection.classList.remove("hidden");
       } else {
         uvSection.classList.add("hidden");
       }
 
-      document.getElementById("recommendation").textContent = result.recommendation || "";
-      document.getElementById("hs-hint").textContent = result.hs_hint || "";
-      document.getElementById("caution-text").textContent = result.caution || "※本ツールはAIによる暫定スクリーニングです。最終判断は輸出管理担当者が行ってください。";
+      // HSコード
+      const hsHint = result.hs_hint || "";
+      const hsRow = document.getElementById("hs-row");
+      if (hsHint) {
+        document.getElementById("hs-hint").textContent = hsHint;
+        hsRow.classList.remove("hidden");
+      } else {
+        hsRow.classList.add("hidden");
+      }
 
       // 承認フォームを初期化（未確定状態に戻す）
       const statusEl = document.getElementById("approval-status");

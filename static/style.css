@@ -317,6 +317,49 @@ select option { background: var(--surface2); }
 .caution-section { border-color: var(--warn-bg); }
 .caution-section p { font-size: 12px; color: var(--text-muted); }
 
+/* アクション行（コンパクト表示） */
+.action-row-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 4px;
+}
+.action-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--surface2);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.action-label {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--text-muted);
+  font-size: 11px;
+  min-width: 90px;
+  padding-top: 1px;
+}
+.action-value {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.action-hs { color: var(--accent); font-size: 12px; font-weight: 400; }
+.action-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.uv-chip {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+
 /* 判定履歴 */
 .history-section {
   max-width: 1400px;
@@ -456,13 +499,7 @@ select option { background: var(--surface2); }
 .conf-mid  { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
 .conf-low  { background: var(--ng-bg); color: var(--ng); border-color: var(--ng); }
 
-.unverifiable-section {
-  border: 1px solid var(--warn);
-  background: var(--warn-bg);
-}
-.unverifiable-section h3 { color: var(--warn); }
-.unverifiable-section ul { margin: 8px 0 0 20px; }
-.unverifiable-section li { font-size: 13px; margin-bottom: 4px; }
+/* unverifiable-section は action-row スタイルに統合 */
 
 .approval-section {
   border: 1px solid var(--accent);
