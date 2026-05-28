@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>輸出該非判定書 {{ doc_no }}</title>
+  <style>
+    /* ===== 基本設定 ===== */
+    @page { size: A4; margin: 18mm 14mm 14mm 18mm; }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Meiryo", "Yu Gothic UI", "Yu Gothic", "Hiragino Kaku Gothic Pro", sans-serif;
+      font-size: 10pt;
+      color: #111;
+      background: #f4f4f4;
+      line-height: 1.65;
+    }
+
+    /* ===== 操作バー（印刷時非表示） ===== */
+    .print-bar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      background: #1a2332;
+      color: #e6edf3;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      z-index: 9999;
+      font-size: 13px;
+    }
+    .print-bar strong { flex: 1; font-size: 13px; }
+    .btn-print, .btn-close {
+      padding: 7px 18px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-print { background: #58a6ff; color: #06223f; }
+    .btn-print:hover { filter: brightness(1.1); }
+    .btn-close { background: #30363d; color: #e6edf3; }
+    .btn-close:hover { background: #444; }
+
+    /* ===== 用紙 ===== */
+    .paper {
+      max-width: 210mm;
+      margin: 60px auto 40px;
+      background: #fff;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.15);
+      padding: 24mm 18mm 20mm;
+    }
+
+    /* ===== ヘッダー ===== */
+    .doc-header {
+      border-bottom: 3px solid #0d2a56;
+      padding-bottom: 12px;
+      margin-bottom: 18px;
+    }
+    .company-name {
+      font-size: 11pt;
+      font-weight: 700;
+      color: #0d2a56;
+      letter-spacing: 1px;
+    }
+    .company-dept {
+      font-size: 9pt;
+      color: #555;
+      margin-top: 1px;
+    }
+    .doc-title-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-top: 8px;
+    }
+    .doc-title {
+      font-size: 18pt;
+      font-weight: 700;
+      letter-spacing: 4px;
+      color: #0d2a56;
+    }
+    .doc-meta {
+      font-size: 9pt;
+      color: #444;
+      text-align: right;
+      line-height: 1.8;
+    }
+
+    /* ===== 下書き帯 ===== */
+    .draft-banner {
+      background: #fff8e6;
+      border: 2px solid #d29922;
+      border-radius: 4px;
+      padding: 8px 14px;
+      margin-bottom: 16px;
+      font-size: 9.5pt;
+      color: #7a5500;
+      font-weight: 600;
+    }
+
+    /* ===== セクション ===== */
+    .section {
+      margin-bottom: 18px;
+    }
+    .section-title {
+      font-size: 10.5pt;
+      font-weight: 700;
+      color: #fff;
+      background: #0d2a56;
+      padding: 4px 12px;
+      margin-bottom: 8px;
+      letter-spacing: 1px;
+    }
+
+    /* ===== 情報テーブル ===== */
+    .info-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10pt;
+    }
+    .info-table th, .info-table td {
+      border: 1px solid #bbb;
+      padding: 5px 10px;
+      vertical-align: top;
+    }
+    .info-table th {
+      background: #e8edf5;
+      color: #0d2a56;
+      font-weight: 700;
+      width: 28%;
+      white-space: nowrap;
+    }
+    .info-table td { color: #111; }
+
+    /* ===== 判定結果 ===== */
+    .judgment-box {
+      border: 2px solid #0d2a56;
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+    .judgment-box-header {
+      background: #0d2a56;
+      color: #fff;
+      font-weight: 700;
+      font-size: 10pt;
+      padding: 5px 14px;
+    }
+    .judgment-box-body {
+      padding: 12px 14px;
+    }
+    .final-decision-value {
+      font-size: 15pt;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .fd-ok   { color: #1a7a2e; }
+    .fd-warn { color: #8a6200; }
+    .fd-ng   { color: #cc2200; }
+    .fd-hold { color: #555; }
+
+    .approval-meta {
+      font-size: 9pt;
+      color: #444;
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+    .taikohyo-check {
+      display: inline-block;
+      background: #e6f4ec;
+      color: #1a7a2e;
+      border: 1px solid #1a7a2e;
+      border-radius: 3px;
+      padding: 1px 8px;
+      font-size: 9pt;
+      font-weight: 600;
+      margin-top: 6px;
+    }
+
+    .ai-result-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 9.5pt;
+      color: #555;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px dashed #ccc;
+    }
+    .ai-badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 3px;
+      font-weight: 700;
+      font-size: 9pt;
+    }
+    .ai-ok   { background: #d4edda; color: #1a5c2e; border: 1px solid #1a5c2e; }
+    .ai-warn { background: #fff3cd; color: #7a5500; border: 1px solid #d29922; }
+    .ai-ng   { background: #fde8e7; color: #a82010; border: 1px solid #cc2200; }
+
+    /* ===== 5ステップ ===== */
+    .steps-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9.5pt;
+    }
+    .steps-table th {
+      background: #e8edf5;
+      color: #0d2a56;
+      font-weight: 700;
+      border: 1px solid #bbb;
+      padding: 4px 8px;
+      text-align: center;
+    }
+    .steps-table td {
+      border: 1px solid #bbb;
+      padding: 5px 8px;
+      vertical-align: top;
+    }
+    .step-result-cell {
+      white-space: nowrap;
+      font-weight: 700;
+      text-align: center;
+    }
+    .sr-ok   { color: #1a7a2e; }
+    .sr-warn { color: #8a6200; }
+    .sr-ng   { color: #cc2200; }
+    .sr-skip { color: #555; }
+    .conf-badge {
+      display: inline-block;
+      font-size: 8pt;
+      padding: 0px 5px;
+      border-radius: 3px;
+      margin-left: 4px;
+    }
+    .conf-h { background: #d4edda; color: #1a5c2e; }
+    .conf-m { background: #fff3cd; color: #7a5500; }
+    .conf-l { background: #fde8e7; color: #a82010; }
+
+    /* ===== 要確認事項 ===== */
+    .uv-list {
+      padding-left: 1.4em;
+      font-size: 9.5pt;
+      color: #333;
+    }
+    .uv-list li { margin-bottom: 3px; }
+
+    /* ===== 推奨アクション ===== */
+    .recommendation-box {
+      background: #f0f4fa;
+      border-left: 4px solid #0d2a56;
+      padding: 8px 12px;
+      font-size: 9.5pt;
+      color: #222;
+    }
+
+    /* ===== 署名欄 ===== */
+    .signature-section {
+      margin-top: 24px;
+      page-break-inside: avoid;
+    }
+    .sig-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .sig-cell {
+      border: 1px solid #aaa;
+      padding: 8px 10px;
+      min-height: 64px;
+    }
+    .sig-cell-label {
+      font-size: 8.5pt;
+      color: #555;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .sig-cell-value {
+      font-size: 9.5pt;
+      color: #111;
+    }
+
+    /* ===== 免責 ===== */
+    .disclaimer {
+      margin-top: 16px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-size: 8pt;
+      color: #666;
+      line-height: 1.7;
+    }
+    .disclaimer strong { color: #555; }
+
+    /* ===== フッター ===== */
+    .doc-footer {
+      margin-top: 12px;
+      border-top: 1px solid #ccc;
+      padding-top: 6px;
+      font-size: 8pt;
+      color: #999;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* ===== 印刷設定 ===== */
+    @media print {
+      body { background: #fff; }
+      .print-bar { display: none; }
+      .paper {
+        box-shadow: none;
+        margin: 0;
+        padding: 0;
+        max-width: 100%;
+      }
+      .section-title { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .doc-header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .judgment-box-header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .steps-table th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .info-table th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 操作バー（印刷時は非表示） -->
+  <div class="print-bar">
+    <strong>📄 輸出該非判定書 — {{ doc_no }}</strong>
+    <button class="btn-print" onclick="window.print()">🖨️ 印刷（PDF保存）</button>
+    <button class="btn-close" onclick="window.close()">✕ 閉じる</button>
+  </div>
+
+  <div class="paper">
+
+    <!-- ===== ドキュメントヘッダー ===== -->
+    <div class="doc-header">
+      <div class="company-name">株式会社シンクスコーポレーション</div>
+      <div class="company-dept">輸出管理担当</div>
+      <div class="doc-title-row">
+        <div class="doc-title">輸出該非判定書</div>
+        <div class="doc-meta">
+          文書番号：{{ doc_no }}<br>
+          発行日：{{ issue_date }}<br>
+          判定日時：{{ entry.timestamp }}
+        </div>
+      </div>
+    </div>
+
+    <!-- 未承認の場合は下書き帯 -->
+    {% if entry.status != '承認済み' %}
+    <div class="draft-banner">
+      ⚠️ 暫定版（未承認）— 担当者による最終確認・承認が完了していません。社外提出前に必ず承認を完了してください。
+    </div>
+    {% endif %}
+
+    <!-- ===== 1. 判定対象貨物 ===== -->
+    <div class="section">
+      <div class="section-title">1. 判定対象貨物</div>
+      <table class="info-table">
+        <tr><th>顧客名</th><td>{{ entry.get('customer') or '—' }}</td></tr>
+        <tr><th>材質</th><td>{{ entry.get('material') or '—' }}</td></tr>
+        <tr><th>寸法</th><td>{{ entry.get('dimensions') or '—' }}</td></tr>
+        <tr><th>用途（最終用途）</th><td>{{ entry.get('purpose') or '—' }}</td></tr>
+        <tr><th>商流</th><td>{{ entry.get('trade_flow') or '—' }}</td></tr>
+        <tr><th>仕向け国</th><td>{{ entry.get('destination') or '—' }}</td></tr>
+        {% if entry.get('hs_hint') %}
+        <tr><th>参考 HSコード</th><td>{{ entry.get('hs_hint') }}</td></tr>
+        {% endif %}
+      </table>
+    </div>
+
+    <!-- ===== 2. 判定結果 ===== -->
+    <div class="section">
+      <div class="section-title">2. 判定結果</div>
+
+      {% set fd = entry.get('final_decision', '') %}
+      {% if entry.status == '承認済み' %}
+        {% if '非該当' in fd %}{% set fd_cls = 'fd-ok' %}
+        {% elif '該当' in fd or '許可' in fd %}{% set fd_cls = 'fd-ng' %}
+        {% elif '保留' in fd %}{% set fd_cls = 'fd-hold' %}
+        {% else %}{% set fd_cls = 'fd-warn' %}{% endif %}
+      {% endif %}
+
+      <div class="judgment-box">
+        <div class="judgment-box-header">担当者による最終判断</div>
+        <div class="judgment-box-body">
+          {% if entry.status == '承認済み' %}
+            <div class="final-decision-value {{ fd_cls }}">{{ fd }}</div>
+            <div class="approval-meta">
+              <span>確認者：{{ entry.get('approver', '—') }}</span>
+              <span>確認日時：{{ entry.get('approved_at', '—') }}</span>
+            </div>
+            {% if entry.get('taikohyo_checked') %}
+            <div class="taikohyo-check">✓ 公式の項目別対比表で突合・確認済み</div>
+            {% endif %}
+          {% else %}
+            <div class="final-decision-value fd-hold">（未確定 — 担当者による確認待ち）</div>
+          {% endif %}
+
+          <!-- AI暫定スクリーニング（補助情報として） -->
+          <div class="ai-result-row">
+            <span>AIスクリーニング結果（参考）：</span>
+            {% set ov = entry.get('overall', '要確認') %}
+            {% if ov == 'OK' %}
+              <span class="ai-badge ai-ok">リスク低（目安）</span>
+            {% elif ov == '要許可' %}
+              <span class="ai-badge ai-ng">要許可の可能性</span>
+            {% else %}
+              <span class="ai-badge ai-warn">要確認</span>
+            {% endif %}
+            <span style="font-size:8.5pt;color:#888;">※AIによる暫定スクリーニングです。最終判断は上記担当者確認に基づきます。</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 3. 5ステップ判定根拠 ===== -->
+    {% set steps = entry.get('steps', []) %}
+    {% if steps %}
+    <div class="section">
+      <div class="section-title">3. 判定根拠（5ステップ・AIスクリーニング詳細）</div>
+      <table class="steps-table">
+        <thead>
+          <tr>
+            <th style="width:8%">STEP</th>
+            <th style="width:32%">確認項目</th>
+            <th style="width:14%">結果</th>
+            <th>根拠・コメント</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in steps %}
+          {% set r = s.get('result', '') %}
+          {% if r in ['非該当', 'ホワイト国', '問題なし', 'スキップ'] %}{% set rcls = 'sr-ok' %}
+          {% elif r in ['該当', '輸出不可'] %}{% set rcls = 'sr-ng' %}
+          {% elif r == 'スキップ' %}{% set rcls = 'sr-skip' %}
+          {% else %}{% set rcls = 'sr-warn' %}{% endif %}
+          {% set conf = s.get('confidence', '') %}
+          {% if conf == '高' %}{% set ccls = 'conf-h' %}
+          {% elif conf == '低' %}{% set ccls = 'conf-l' %}
+          {% else %}{% set ccls = 'conf-m' %}{% endif %}
+          <tr>
+            <td style="text-align:center;font-weight:700;">{{ s.get('step', '') }}</td>
+            <td>{{ s.get('title', '') }}</td>
+            <td class="step-result-cell {{ rcls }}">
+              {{ r }}
+              {% if conf %}<span class="conf-badge {{ ccls }}">{{ conf }}</span>{% endif %}
+            </td>
+            <td style="font-size:9pt;">{{ s.get('reason', '') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p style="font-size:8pt;color:#777;margin-top:4px;">※ 確信度表示：高（信頼性高）／中（推定含む）／低（情報不足・要確認）</p>
+    </div>
+    {% endif %}
+
+    <!-- ===== 4. 担当者が確認すべき事項 ===== -->
+    {% set uvs = entry.get('unverifiable', []) %}
+    {% if uvs %}
+    <div class="section">
+      <div class="section-title">4. AIでは確認できない事項（担当者の実地確認が必要）</div>
+      <ul class="uv-list">
+        {% for uv in uvs %}
+        <li>{{ uv }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <!-- ===== 5. 推奨アクション ===== -->
+    {% if entry.get('recommendation') %}
+    <div class="section">
+      <div class="section-title">5. 推奨アクション</div>
+      <div class="recommendation-box">{{ entry.get('recommendation') }}</div>
+    </div>
+    {% endif %}
+
+    <!-- ===== 6. 担当者確認記録・署名欄 ===== -->
+    <div class="section signature-section">
+      <div class="section-title">6. 担当者確認記録・署名欄</div>
+      <div class="sig-grid">
+        <div class="sig-cell">
+          <div class="sig-cell-label">確認者</div>
+          <div class="sig-cell-value">{{ entry.get('approver') or '　' }}</div>
+        </div>
+        <div class="sig-cell">
+          <div class="sig-cell-label">確認日時</div>
+          <div class="sig-cell-value">{{ entry.get('approved_at') or '　' }}</div>
+        </div>
+        <div class="sig-cell">
+          <div class="sig-cell-label">担当者署名</div>
+          <div class="sig-cell-value" style="min-height:36px;">&nbsp;</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 免責事項 ===== -->
+    <div class="disclaimer">
+      <strong>【免責事項】</strong>
+      本判定書は、株式会社シンクスコーポレーションが外国為替及び外国貿易法（外為法）・輸出貿易管理令に基づき実施した輸出該非判定の記録です。
+      AIによる暫定スクリーニング結果は補助情報であり、最終的な法的判断は上記担当者の確認に基づきます。
+      法令の改正・解釈変更等により判定内容が変わる場合があります。最終的な輸出許可の要否については、必要に応じて経済産業省または専門家にご確認ください。
+      本判定書の有効性は発行日時点の情報に基づくものとします。
+    </div>
+
+    <!-- ===== フッター ===== -->
+    <div class="doc-footer">
+      <span>株式会社シンクスコーポレーション ／ 輸出管理担当</span>
+      <span>{{ doc_no }} ／ {{ issue_date }} 発行</span>
+    </div>
+
+  </div><!-- /.paper -->
+</body>
+</html>

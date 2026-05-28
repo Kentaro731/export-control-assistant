@@ -232,10 +232,16 @@ JSON形式のみで回答してください。"""
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "customer": customer,
                 "material": material,
+                "dimensions": dimensions,
                 "destination": destination,
                 "purpose": purpose,
+                "trade_flow": trade_flow,
                 "overall": result.get("overall", "要確認"),
                 "recommendation": result.get("recommendation", ""),
+                "steps": result.get("steps", []),
+                "unverifiable": result.get("unverifiable", []),
+                "hs_hint": result.get("hs_hint", hs_hint),
+                "caution": result.get("caution", ""),
                 "status": "未確定",
                 "approver": "",
                 "approved_at": "",
@@ -286,6 +292,27 @@ def judge_status(job_id):
     if job is None:
         return jsonify({"status": "error", "message": "ジョブが見つかりません（IDが無効か期限切れ）"}), 404
     return jsonify(job)
+
+
+@app.route("/api/judgment-doc/<entry_id>")
+def judgment_doc(entry_id):
+    """判定書HTML（A4印刷用）を返す。ブラウザの印刷 → PDF保存で正式文書として利用可能。"""
+    history = load_history()
+    entry = next((h for h in history if h.get("id") == entry_id), None)
+    if not entry:
+        return "<p>指定された判定記録が見つかりません。</p>", 404
+    import datetime as _dt
+    jst = _dt.timezone(_dt.timedelta(hours=9))
+    issue_date = _dt.datetime.now(jst).strftime("%Y年%m月%d日")
+    # 文書番号 SXC-YYYYMMDD-HHMMSS（entry_id の先頭20文字から）
+    eid = entry.get("id", "")
+    doc_no = f"SXC-{eid[:8]}-{eid[8:14]}" if len(eid) >= 14 else f"SXC-{eid}"
+    return render_template(
+        "judgment_doc.html",
+        entry=entry,
+        doc_no=doc_no,
+        issue_date=issue_date,
+    )
 
 
 @app.route("/api/history", methods=["GET"])

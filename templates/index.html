@@ -147,7 +147,10 @@
 
         <div class="result-header">
           <div id="overall-badge" class="overall-badge"></div>
-          <button class="btn-copy" onclick="copyResult()">📋 結果をコピー</button>
+          <div style="display:flex;gap:8px;">
+            <button class="btn-doc" id="btn-judgment-doc" onclick="openJudgmentDoc()" disabled title="承認記録後は正式版、未承認でも暫定版を出力できます">📄 判定書を出力</button>
+            <button class="btn-copy" onclick="copyResult()">📋 コピー</button>
+          </div>
         </div>
 
         <!-- リスト規制（別表第1）要突合バナー -->
@@ -224,10 +227,11 @@
             <th>AI目安</th>
             <th>状態 / 最終判断</th>
             <th>推奨アクション</th>
+            <th>判定書</th>
           </tr>
         </thead>
         <tbody id="history-body">
-          <tr><td colspan="8" class="empty-row">履歴を読み込み中...</td></tr>
+          <tr><td colspan="9" class="empty-row">履歴を読み込み中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -784,6 +788,9 @@
       document.getElementById("taikohyo-checked").checked = false;
 
       document.getElementById("result-content").classList.remove("hidden");
+      // 判定書出力ボタンを有効化（entry_id が取れたとき）
+      const docBtn = document.getElementById("btn-judgment-doc");
+      if (docBtn) docBtn.disabled = !lastEntryId;
     }
 
     async function submitApproval() {
@@ -845,7 +852,7 @@
       const history = await res.json();
       const tbody = document.getElementById("history-body");
       if (!history.length) {
-        tbody.innerHTML = '<tr><td colspan="8" class="empty-row">判定履歴がありません</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="empty-row">判定履歴がありません</td></tr>';
         return;
       }
       tbody.innerHTML = history.map(h => {
@@ -863,6 +870,7 @@
         const statusCell = h.status === "承認済み"
           ? `<span class="hist-badge badge-ok">承認済</span><br><span class="hist-final">${escapeHtml(h.final_decision || "")}<br>（${escapeHtml(h.approver || "")}）</span>`
           : '<span class="hist-badge badge-warn">未確定</span>';
+        const docLabel = h.status === "承認済み" ? "📄 正式版" : "📄 暫定版";
         return `<tr>
           <td>${escapeHtml(h.timestamp || "")}</td>
           <td>${escapeHtml(h.customer || "—")}</td>
@@ -872,6 +880,7 @@
           <td>${badge}</td>
           <td>${statusCell}</td>
           <td class="rec-cell">${escapeHtml(rec)}</td>
+          <td><button class="btn-doc-sm" onclick="openJudgmentDoc('${escapeHtml(h.id || '')}')">${docLabel}</button></td>
         </tr>`;
       }).join("");
     }
@@ -1072,6 +1081,13 @@
     }
 
     loadHistory();
+
+    // ===== 判定書出力 =====
+    function openJudgmentDoc(entryId) {
+      const id = entryId || lastEntryId;
+      if (!id) { alert("先に判定を実行してください。"); return; }
+      window.open(`/api/judgment-doc/${id}`, "_blank", "noopener");
+    }
 
     // ===== 一括判定ナビゲーション =====
     let batchResultsStore = [];  // [{result, entry_id, row} | null]  null=未完

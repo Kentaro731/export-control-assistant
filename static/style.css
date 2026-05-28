@@ -211,6 +211,33 @@ select option { background: var(--surface2); }
 .overall-badge.badge-warn { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn); }
 .overall-badge.badge-ng   { background: var(--ng-bg);   color: var(--ng);   border: 1px solid var(--ng); }
 
+.btn-doc {
+  background: #1f3a5f;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+.btn-doc:hover:not(:disabled) { background: #2a4e80; }
+.btn-doc:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-doc-sm {
+  background: #1f3a5f;
+  color: var(--accent);
+  border: 1px solid #2a4e80;
+  border-radius: 4px;
+  padding: 3px 9px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.btn-doc-sm:hover { background: #2a4e80; }
+
 .btn-copy {
   background: var(--surface2);
   color: var(--text-muted);
