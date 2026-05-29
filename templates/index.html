@@ -150,6 +150,8 @@
           <div id="overall-badge" class="overall-badge"></div>
           <div style="display:flex;gap:8px;">
             <button class="btn-doc" id="btn-judgment-doc" onclick="openJudgmentDoc()" disabled title="承認記録後は正式版、未承認でも暫定版を出力できます">📄 判定書を出力</button>
+            <button class="btn-dl btn-dl-xlsx" id="btn-dl-xlsx" onclick="downloadCert('xlsx')" disabled title="シンクス書式の判定証明書をExcelでダウンロード">⬇ Excel</button>
+            <button class="btn-dl btn-dl-pdf"  id="btn-dl-pdf"  onclick="downloadCert('pdf')"  disabled title="判定証明書PDFをダウンロード">⬇ PDF</button>
             <button class="btn-copy" onclick="copyResult()">📋 コピー</button>
           </div>
         </div>
@@ -887,6 +889,10 @@
       // 判定書出力ボタンを有効化（entry_id が取れたとき）
       const docBtn = document.getElementById("btn-judgment-doc");
       if (docBtn) docBtn.disabled = !lastEntryId;
+      const xlsBtn = document.getElementById("btn-dl-xlsx");
+      const pdfBtn = document.getElementById("btn-dl-pdf");
+      if (xlsBtn) xlsBtn.disabled = !lastEntryId;
+      if (pdfBtn) pdfBtn.disabled = !lastEntryId;
     }
 
     async function submitApproval() {
@@ -1033,7 +1039,11 @@
           <td>${badge}</td>
           <td>${statusCell}</td>
           <td class="rec-cell">${escapeHtml(rec)}</td>
-          <td><button class="btn-doc-sm" onclick="openJudgmentDoc('${escapeHtml(h.id || '')}')">${docLabel}</button></td>
+          <td class="cert-dl-cell">
+            <button class="btn-doc-sm" onclick="openJudgmentDoc('${escapeHtml(h.id || '')}')">${docLabel}</button>
+            <button class="btn-dl-sm btn-dl-sm-xlsx" onclick="downloadCert('xlsx','${escapeHtml(h.id || '')}')">⬇XLS</button>
+            <button class="btn-dl-sm btn-dl-sm-pdf"  onclick="downloadCert('pdf','${escapeHtml(h.id || '')}')">⬇PDF</button>
+          </td>
         </tr>`;
       }).join("");
     }
@@ -1296,6 +1306,34 @@
       const id = entryId || lastEntryId;
       if (!id) { alert("先に判定を実行してください。"); return; }
       window.open(`/api/judgment-doc/${id}`, "_blank", "noopener");
+    }
+
+    // ===== 判定証明書ダウンロード（Excel / PDF）=====
+    async function downloadCert(fmt, entryId) {
+      const id = entryId || lastEntryId;
+      if (!id) { alert("先に判定を実行してください。"); return; }
+      const url = fmt === "pdf"
+        ? `/api/judgment-pdf/${id}`
+        : `/api/judgment-xls/${id}`;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+          alert(`ダウンロードに失敗しました：${err.error || res.statusText}`);
+          return;
+        }
+        const blob = await res.blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        // ファイル名をレスポンスヘッダーから取得
+        const disp = res.headers.get("Content-Disposition") || "";
+        const m = disp.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
+        a.download = m ? decodeURIComponent(m[1].replace(/"/g,"")) : `判定証明書.${fmt === "pdf" ? "pdf" : "xlsx"}`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      } catch(e) {
+        alert(`ダウンロードエラー：${e.message}`);
+      }
     }
 
     // ===== 一括判定ナビゲーション =====
@@ -1601,7 +1639,11 @@
             <td>${badge}</td>
             <td>${statusCell}</td>
             <td class="rec-cell">${escapeHtml(rec)}</td>
-            <td><button class="btn-doc-sm" onclick="openJudgmentDoc('${escapeHtml(h.id || '')}')">${docLabel}</button></td>
+            <td class="cert-dl-cell">
+              <button class="btn-doc-sm" onclick="openJudgmentDoc('${escapeHtml(h.id || '')}')">${docLabel}</button>
+              <button class="btn-dl-sm btn-dl-sm-xlsx" onclick="downloadCert('xlsx','${escapeHtml(h.id || '')}')">⬇XLS</button>
+              <button class="btn-dl-sm btn-dl-sm-pdf"  onclick="downloadCert('pdf','${escapeHtml(h.id || '')}')">⬇PDF</button>
+            </td>
           </tr>`;
         }).join("");
       } catch (e) {
