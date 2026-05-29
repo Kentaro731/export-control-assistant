@@ -2,21 +2,42 @@
 該非判定書 生成モジュール
 
 generate_xls(entry) -> (bytes, error_str)
-    xlrd + xlutils.copy で シンクス .xls テンプレートに顧客名・日付等を書き込んで返す。
+    テンプレートあり → xlrd + xlutils.copy でシンクス .xls を生成（板/丸棒・材質別）
+    テンプレートなし → openpyxl で .xlsx を生成（フォールバック）
 
 generate_pdf(entry) -> (bytes, error_str)
     reportlab で A4 PDF 証明書を生成して返す。
 
 テンプレート取得優先順位:
-  1. 環境変数 SHINX_TEMPLATE_XLS_BASE64 (base64エンコード, Render本番)
-  2. OneDriveローカルパス (開発時)
+  1. Render Secret File: /etc/secrets/shinx_template_b64.txt（base64テキスト）
+  2. 環境変数 SHINX_TEMPLATE_XLS_BASE64（base64, 予備）
+  3. OneDriveローカルパス（開発時）
 """
 
 import os, io, base64
 from datetime import date
 
+# ── xlwt Python3.12 互換パッチ（None フォーマット文字列対策）──
+try:
+    import xlwt.UnicodeUtils as _xlu
+    import xlwt.BIFFRecords as _xlb
+    if not getattr(_xlu, '_safe_patched', False):
+        _orig_upack2 = _xlu.upack2
+        def _safe_upack2(s, encoding='ascii'):
+            if s is None:
+                s = ''
+            return _orig_upack2(s, encoding)
+        _xlu.upack2 = _safe_upack2
+        _xlb.upack2 = _safe_upack2
+        _xlu._safe_patched = True
+except Exception:
+    pass
+
 # ── テンプレートキャッシュ ──────────────────────────────────────────
 _TEMPLATE_BYTES: bytes | None = None
+
+# Render Secret File パス（base64テキスト形式で保存）
+_SECRET_FILE = "/etc/secrets/shinx_template_b64.txt"
 
 _TEMPLATE_LOCAL = os.path.join(
     os.path.expanduser("~"),
@@ -30,10 +51,19 @@ def _get_template() -> bytes | None:
     global _TEMPLATE_BYTES
     if _TEMPLATE_BYTES:
         return _TEMPLATE_BYTES
+    # 優先1: Render Secret File（base64テキスト）
+    if os.path.exists(_SECRET_FILE):
+        with open(_SECRET_FILE, "r") as f:
+            b64 = f.read().strip()
+        if b64:
+            _TEMPLATE_BYTES = base64.b64decode(b64)
+            return _TEMPLATE_BYTES
+    # 優先2: 環境変数（予備）
     b64 = os.environ.get("SHINX_TEMPLATE_XLS_BASE64", "")
     if b64:
         _TEMPLATE_BYTES = base64.b64decode(b64)
         return _TEMPLATE_BYTES
+    # 優先3: ローカルファイル（開発時）
     if os.path.exists(_TEMPLATE_LOCAL):
         with open(_TEMPLATE_LOCAL, "rb") as f:
             _TEMPLATE_BYTES = f.read()
@@ -99,11 +129,71 @@ def _make_doc_no(entry: dict) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# Excel (.xlsx) 生成 — openpyxl で該非判定書フォーマットを再現
+# Excel 生成
+#   テンプレートあり → xlrd+xlutils で .xls（シンクス正式フォーマット）
+#   テンプレートなし → openpyxl で .xlsx（フォールバック）
 # ═══════════════════════════════════════════════════════════════════
 
+def _generate_xls_from_template(entry: dict) -> tuple[bytes | None, str | None]:
+    """シンクス .xls テンプレートに顧客名・日付・品種を書き込んで返す"""
+    try:
+        import xlrd
+        from xlutils.copy import copy as xl_copy
+    except ImportError:
+        return None, "xlrd/xlutils が未インストールです"
+
+    tpl = _get_template()
+    if not tpl:
+        return None, "テンプレートなし"
+
+    material = entry.get("material", "")
+    sheet_name = find_sheet_for_material(material)
+    if not sheet_name:
+        return None, f"材質 '{material}' に対応するシートがありません"
+
+    try:
+        rb = xlrd.open_workbook(file_contents=tpl, formatting_info=True)
+    except Exception as e:
+        return None, f"テンプレート読み込みエラー: {e}"
+
+    try:
+        sheet_idx = rb.sheet_names().index(sheet_name)
+    except ValueError:
+        return None, f"シート '{sheet_name}' がテンプレートに見つかりません"
+
+    wb = xl_copy(rb)
+    ws = wb.get_sheet(sheet_idx)
+
+    # 日付 (row1, col6)
+    ws.write(1, 6, _excel_serial(date.today()))
+    # 顧客名 (row2, col0)
+    customer = (entry.get("customer") or "").strip()
+    ws.write(2, 0, customer)
+    # 品種・規格 (row19, col2)
+    dims = (entry.get("dimensions") or "").strip()
+    spec = material + (f"　{dims}" if dims else "")
+    ws.write(19, 2, f"品種：{spec}")
+    # 管理No. (row0, col7)
+    eid = entry.get("id", "")
+    doc_no = f"SXC-{eid[:8]}-{eid[8:14]}" if len(eid) >= 14 else f"SXC-{eid}"
+    ws.write(0, 7, doc_no)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.read(), None
+
+
 def generate_xls(entry: dict) -> tuple[bytes | None, str | None]:
-    """openpyxl で .xlsx 該非判定書を生成する（テンプレートのレイアウトを再現）"""
+    """
+    テンプレートがあれば xlrd+xlutils で .xls（シンクス正式フォーマット）を生成。
+    テンプレートがなければ openpyxl で .xlsx（フォールバック）を生成。
+    """
+    # テンプレートあり → 正式フォーマット
+    tpl_data, tpl_err = _generate_xls_from_template(entry)
+    if tpl_data:
+        return tpl_data, None
+    # テンプレートなし → openpyxl フォールバック
     try:
         from openpyxl import Workbook
         from openpyxl.styles import (
