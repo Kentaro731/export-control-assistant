@@ -7,7 +7,6 @@ from datetime import datetime
 from flask import (
     Flask, render_template, jsonify, request, Response, send_file,
 )
-import anthropic
 from openpyxl import Workbook, load_workbook
 from export_law_data import (
     is_white_country, is_designated_country,
@@ -16,7 +15,21 @@ from export_law_data import (
 )
 
 app = Flask(__name__)
-client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
+# anthropic クライアントを遅延初期化（起動時間の短縮）
+_anthropic_client = None
+_anthropic_lock = threading.Lock()
+
+def get_client():
+    global _anthropic_client
+    if _anthropic_client is None:
+        with _anthropic_lock:
+            if _anthropic_client is None:
+                import anthropic as _anthropic
+                _anthropic_client = _anthropic.Anthropic(
+                    api_key=os.environ.get("ANTHROPIC_API_KEY")
+                )
+    return _anthropic_client
 
 # =====================================================================
 # バックグラウンドジョブ管理（一括判定のタイムアウト対策）
@@ -209,7 +222,7 @@ def judge():
 JSON形式のみで回答してください。"""
 
         try:
-            response = client.messages.create(
+            response = get_client().messages.create(
                 model="claude-sonnet-4-6",
                 max_tokens=2000,
                 system=SYSTEM_PROMPT,
@@ -689,6 +702,54 @@ def check_docs():
 
     results = [results_map[d["id"]] for d in DOC_REFS if d["id"] in results_map]
     return jsonify({"status": "ok", "results": results, "checked_at": checked_at})
+
+
+# =====================================================================
+# 該非判定書ダウンロード（Excel / PDF）
+# =====================================================================
+
+@app.route("/api/judgment-xls/<entry_id>")
+def judgment_xls(entry_id):
+    """シンクステンプレートを使った該非判定書 .xls をダウンロードする"""
+    from judgment_cert import generate_xls
+    history = load_history()
+    entry = next((h for h in history if h.get("id") == entry_id), None)
+    if not entry:
+        return jsonify({"error": "指定された判定記録が見つかりません"}), 404
+    data, err = generate_xls(entry)
+    if err:
+        return jsonify({"error": err}), 400
+    customer = (entry.get("customer") or "顧客名なし").strip()
+    material = (entry.get("material") or "材質不明").strip()[:20]
+    fname = f"該非判定書_{customer}_{material}_{entry.get('id','')[:8]}.xlsx"
+    return send_file(
+        io.BytesIO(data),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=fname,
+    )
+
+
+@app.route("/api/judgment-pdf/<entry_id>")
+def judgment_pdf(entry_id):
+    """該非判定証明書 PDF をダウンロードする"""
+    from judgment_cert import generate_pdf
+    history = load_history()
+    entry = next((h for h in history if h.get("id") == entry_id), None)
+    if not entry:
+        return jsonify({"error": "指定された判定記録が見つかりません"}), 404
+    data, err = generate_pdf(entry)
+    if err:
+        return jsonify({"error": err}), 400
+    customer = (entry.get("customer") or "顧客名なし").strip()
+    material = (entry.get("material") or "材質不明").strip()[:20]
+    fname = f"該非判定証明書_{customer}_{material}_{entry.get('id','')[:8]}.pdf"
+    return send_file(
+        io.BytesIO(data),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=fname,
+    )
 
 
 if __name__ == "__main__":
